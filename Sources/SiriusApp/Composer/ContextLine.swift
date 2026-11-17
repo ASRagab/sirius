@@ -1,5 +1,4 @@
 import AppKit
-import CoreImage
 
 // What the app behind the composer has open and selected, as one quiet
 // line at the composer's bottom left: the app's favicon, the subject, and the
@@ -13,7 +12,7 @@ final class ContextLine: NSView {
         var subject: String
         var selection: String?
         var app: String
-        // The app's icon, shown greyed when the app has no favicon.
+        // The app's icon, shown when the app has no favicon.
         var icon: NSImage?
         // The app's favicon file, as read (AmbientFavicon).
         var favicon: Data?
@@ -102,10 +101,10 @@ final class ContextLine: NSView {
             icon.image = mark
             icon.alphaValue = 1
         } else {
-            // An app icon is drawn for a Dock, not for a line of text: grey
-            // and dimmed, it sits with the words instead of over them.
-            icon.image = model.icon.map(Self.grey)
-            icon.alphaValue = 0.75
+            // No favicon (an app that ships none, or one a helper answers
+            // for, such as a browser): the app's own icon, as it is.
+            icon.image = model.icon
+            icon.alphaValue = 1
         }
         label.font = .systemFont(ofSize: 12)
         // What is open reads as text; what is selected in it is secondary.
@@ -121,18 +120,6 @@ final class ContextLine: NSView {
         setAccessibilityRole(.staticText)
         setAccessibilityLabel("Context from \(model.app): \(said)")
         remove.setAccessibilityLabel("Remove context from \(model.app)")
-    }
-
-    private static func grey(_ image: NSImage) -> NSImage {
-        let side: CGFloat = 32
-        var rect = NSRect(x: 0, y: 0, width: side, height: side)
-        guard let source = image.cgImage(forProposedRect: &rect, context: nil, hints: nil),
-              let filter = CIFilter(name: "CIColorControls") else { return image }
-        filter.setValue(CIImage(cgImage: source), forKey: kCIInputImageKey)
-        filter.setValue(0, forKey: kCIInputSaturationKey)
-        guard let output = filter.outputImage,
-              let made = CIContext().createCGImage(output, from: output.extent) else { return image }
-        return NSImage(cgImage: made, size: NSSize(width: 16, height: 16))
     }
 
     override func mouseEntered(with event: NSEvent) { remove.animator().alphaValue = 1 }

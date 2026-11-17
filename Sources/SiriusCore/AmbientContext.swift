@@ -448,7 +448,7 @@ public struct AmbientItemRef: Hashable, Sendable {
 // `favicon.png`. It is never sent: Sirius knows the bundle of the app in
 // front and looks for the fixed name itself, so it follows no path an app
 // names, and the file is under the app's code signature. A file over
-// `maxBytes`, or one that is not what its name says, is passed over.
+// `maxBytes`, or one that is not what its name says, is passed over, and the host shows the app's own icon.
 public enum AmbientFavicon {
     public static let maxBytes = 256 * 1024
     public static let names = ["favicon.svg", "favicon.png"]
