@@ -485,9 +485,6 @@ public actor AgentHost {
         await aside.session.send(text, attachments: copied, context: context)
     }
 
-    // How many asides are open.
-    public var asideCount: Int { asides.count }
-
     // Ends the aside. When the agent said anything in it, what was said is
     // written to the agent's asides/<id>.md and the agent is left a note
     // pointing there, for the user's next message to it.

@@ -75,9 +75,6 @@ final class JSONRPCStdio: @unchecked Sendable {
 
     var processIdentifier: Int32 { process.processIdentifier }
 
-    // Why the connection is gone, nil while it is up.
-    var connectionFailure: Error? { lock.withLock { failure } }
-
     // Every line in both directions, prefixed ">> " (sent) or "<< "
     // (received). For tests and diagnostics.
     func observe(_ observer: @escaping @Sendable (String) -> Void) {

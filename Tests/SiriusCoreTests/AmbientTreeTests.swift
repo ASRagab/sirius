@@ -320,10 +320,90 @@ final class AmbientTreeTests: XCTestCase {
         XCTAssertNil(context.items[1].text)
     }
 
-    func testTheChipNamesWhatIsPointedAt() throws {
-        XCTAssertEqual(try snapshot().title, "Comment by Ada")
-        XCTAssertEqual(try snapshot(["id": "app", "role": "Application", "title": "Example"]).title, "Example")
-        XCTAssertEqual(try snapshot(["id": "app", "role": "Application"]).title, "Threads")
+    // The composer's line: what is open, then what is selected in it.
+    func testTheSummaryNamesWhatIsOpenAndWhatIsSelected() throws {
+        XCTAssertEqual(try snapshot().summary, AmbientSummary(subject: "Comment by Ada", selection: "3 words"))
+        XCTAssertEqual(try snapshot(["id": "app", "role": "Application", "title": "Example"]).summary,
+                       AmbientSummary(subject: "Example"))
+        XCTAssertEqual(try snapshot(["id": "app", "role": "Application"]).summary, AmbientSummary(subject: "Threads"))
+    }
+
+    func testTheSummaryOfSelectedItems() throws {
+        func inbox(_ rows: [[String: Any]]) throws -> AmbientSummary {
+            try snapshot(["id": "app", "role": "Application", "title": "Mail", "children": [
+                ["id": "w", "role": "Window", "focused": true, "children": [
+                    ["id": "list", "role": "List", "title": "Inbox", "focused": true, "children": rows] as [String: Any],
+                ]] as [String: Any],
+            ]]).summary
+        }
+        let one: [String: Any] = ["id": "r-1", "role": "Row", "title": "Re: launch timing", "selected": true]
+        let two: [String: Any] = ["id": "r-2", "role": "Row", "title": "Invoice", "selected": true]
+        XCTAssertEqual(try inbox([one]), AmbientSummary(subject: "Inbox", selection: "Re: launch timing"))
+        XCTAssertEqual(try inbox([one, two]), AmbientSummary(subject: "Inbox", selection: "2 selected"))
+        XCTAssertEqual(try inbox([["id": "r-3", "role": "Row", "selected": true]]),
+                       AmbientSummary(subject: "Inbox", selection: "1 selected"))
+        XCTAssertEqual(try inbox([["id": "r-4", "role": "Row"]]), AmbientSummary(subject: "Inbox"))
+        // A single line reads "line", and a title is cut at its first line.
+        XCTAssertEqual(
+            try inbox([["id": "t", "role": "Text", "selected": true, "title": " \n",
+                        "attributes": ["lines": ["start": 3, "end": 3]]]]),
+            AmbientSummary(subject: "Inbox", selection: "line 3")
+        )
+    }
+
+    // An app's own words for the line are used as they are; a field of the
+    // wrong kind leaves Sirius's wording.
+    func testTheSummaryQuotesTheAppsOwnDisplay() throws {
+        func tree(_ display: Any) throws -> AmbientTree {
+            let data = try JSONSerialization.data(withJSONObject: [
+                "protocol": "0.2.0", "instance": "run-1", "root": Self.threads, "display": display,
+            ])
+            return try JSONDecoder().decode(AmbientTree.self, from: data)
+        }
+        XCTAssertEqual(AmbientSummary(try tree(["title": "Budget.numbers", "detail": "cells B2:D9"]), app: "Example"),
+                       AmbientSummary(subject: "Budget.numbers", selection: "cells B2:D9"))
+        XCTAssertEqual(AmbientSummary(try tree(["title": "Budget.numbers"]), app: "Example"),
+                       AmbientSummary(subject: "Budget.numbers"))
+        let own = AmbientSummary(subject: "Comment by Ada", selection: "3 words")
+        XCTAssertEqual(AmbientSummary(try tree(["title": 4]), app: "Example"), own)
+        XCTAssertEqual(AmbientSummary(try tree("no"), app: "Example"), own)
+        XCTAssertEqual(AmbientSummary(try tree(["detail": "only a detail"]), app: "Example"), own)
+        let long = AmbientSummary(try tree(["title": String(repeating: "a", count: 200)]), app: "Example")
+        XCTAssertEqual(long.subject.count, AmbientDisplay.maxChars + 1)
+    }
+
+    // The favicon is the app's own file: svg before png, and nothing that
+    // is too large, empty, a link, or not what its name says.
+    func testTheFaviconIsReadFromTheAppsBundle() throws {
+        let files = FileManager.default
+        let app = files.temporaryDirectory.appendingPathComponent("favicon-\(UUID().uuidString).app")
+        let resources = app.appendingPathComponent("Contents/Resources")
+        try files.createDirectory(at: resources, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: app) }
+        let svgFile = resources.appendingPathComponent("favicon.svg")
+        let pngFile = resources.appendingPathComponent("favicon.png")
+        let svg = Data("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"/>".utf8)
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0])
+
+        XCTAssertNil(AmbientFavicon.data(inBundle: app))
+        try png.write(to: pngFile)
+        XCTAssertEqual(AmbientFavicon.data(inBundle: app), png)
+        try svg.write(to: svgFile)
+        XCTAssertEqual(AmbientFavicon.data(inBundle: app), svg)
+        // An svg that is not one is passed over for the png.
+        try Data("hello".utf8).write(to: svgFile)
+        XCTAssertEqual(AmbientFavicon.data(inBundle: app), png)
+        try (svg + Data(count: AmbientFavicon.maxBytes)).write(to: svgFile)
+        XCTAssertEqual(AmbientFavicon.data(inBundle: app), png)
+        try Data("not a png".utf8).write(to: pngFile)
+        XCTAssertNil(AmbientFavicon.data(inBundle: app))
+        // A link to a file outside the bundle is not followed.
+        let outside = files.temporaryDirectory.appendingPathComponent("outside-\(UUID().uuidString).svg")
+        try svg.write(to: outside)
+        defer { try? files.removeItem(at: outside) }
+        try files.removeItem(at: svgFile)
+        try files.createSymbolicLink(at: svgFile, withDestinationURL: outside)
+        XCTAssertNil(AmbientFavicon.data(inBundle: app))
     }
 
     func testAMessageWithATreeSurvivesTheLog() throws {

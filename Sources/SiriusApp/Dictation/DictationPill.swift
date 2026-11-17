@@ -91,7 +91,6 @@ final class DictationPill: DictationObserver {
     var shownState: State { model.state }
     var isRed: Bool { model.failedAt != nil }
     var shownOpenLogo: NSImage? { model.opensOnLogo ? model.openLogo : nil }
-    var windowAlpha: CGFloat { window?.alphaValue ?? 0 }
     // Recomputes the window shadow while the pill grows, morphs or shrinks.
     private var shadowTimer: Timer?
     // The launch cue's colour in the border: the toast's arrival ring

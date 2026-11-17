@@ -180,11 +180,28 @@ public struct AmbientTree: Decodable, Equatable, Sendable {
     public var `protocol`: String
     public var instance: String
     public var root: AmbientElement
+    // PROPOSED, not yet in the specification: the app's own words for the
+    // composer's line, as a page's meta tags word its card. Optional; a
+    // field of the wrong kind is dropped, not refused.
+    public var display: AmbientDisplay?
 
-    public init(protocol: String, instance: String, root: AmbientElement) {
+    public init(protocol: String, instance: String, root: AmbientElement, display: AmbientDisplay? = nil) {
         self.protocol = `protocol`
         self.instance = instance
         self.root = root
+        self.display = display
+    }
+
+    private enum Key: String, CodingKey { case `protocol`, instance, root, display }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: Key.self)
+        self.init(
+            protocol: try fields.decode(String.self, forKey: .protocol),
+            instance: try fields.decode(String.self, forKey: .instance),
+            root: try fields.decode(AmbientElement.self, forKey: .root),
+            display: (try? fields.decodeIfPresent(AmbientDisplay.self, forKey: .display)) ?? nil
+        )
     }
 
     // Where the user is: the focused elements followed down from the root,
@@ -425,6 +442,116 @@ public struct AmbientItemRef: Hashable, Sendable {
     }
 }
 
+// An app's favicon: a small picture of the app made for a line of text,
+// as a site's favicon is to its app icon. It is a file in the app's own
+// bundle, `Contents/Resources/favicon.svg` or, failing that,
+// `favicon.png`. It is never sent: Sirius knows the bundle of the app in
+// front and looks for the fixed name itself, so it follows no path an app
+// names, and the file is under the app's code signature. A file over
+// `maxBytes`, or one that is not what its name says, is passed over.
+public enum AmbientFavicon {
+    public static let maxBytes = 256 * 1024
+    public static let names = ["favicon.svg", "favicon.png"]
+
+    // The favicon's bytes for the app at `bundle`, or nil.
+    public static func data(inBundle bundle: URL) -> Data? {
+        let resources = bundle.appendingPathComponent("Contents/Resources", isDirectory: true)
+        for name in names {
+            let file = resources.appendingPathComponent(name)
+            // A link out of the bundle is not the app's own file.
+            guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+                  values.isRegularFile == true, values.isSymbolicLink != true,
+                  let size = values.fileSize, size > 0, size <= maxBytes,
+                  let data = try? Data(contentsOf: file), data.count <= maxBytes, looksRight(data, name: name)
+            else { continue }
+            return data
+        }
+        return nil
+    }
+
+    private static func looksRight(_ data: Data, name: String) -> Bool {
+        if name.hasSuffix(".png") { return data.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) }
+        return String(data: data, encoding: .utf8)?.contains("<svg") == true
+    }
+}
+
+// What an app asks the composer's line to say: `title` for what is open,
+// `detail` for what is selected in it. Plain text; Sirius cuts each to one
+// line of `maxChars` and draws it in its own layout. The picture beside
+// it is the app's favicon, a file in its bundle (AmbientFavicon).
+public struct AmbientDisplay: Equatable, Sendable, Decodable {
+    public static let maxChars = 80
+    public var title: String?
+    public var detail: String?
+
+    public init(title: String? = nil, detail: String? = nil) {
+        self.title = title
+        self.detail = detail
+    }
+
+    private enum Key: String, CodingKey { case title, detail }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: Key.self)
+        title = (try? fields.decodeIfPresent(String.self, forKey: .title)) ?? nil
+        detail = (try? fields.decodeIfPresent(String.self, forKey: .detail)) ?? nil
+    }
+}
+
+// One line for what a tree holds, as the composer shows it beside the
+// app's icon: the subject, which is what is open (the innermost titled
+// thing in focus that is not itself the selection, else the app), and the
+// selection, which is what the agent is sent text for. An app that sends
+// its own words (AmbientDisplay) is quoted; one that does not gets
+// Sirius's wording from its tree.
+public struct AmbientSummary: Equatable, Sendable {
+    public var subject: String
+    public var selection: String?
+
+    public init(subject: String, selection: String? = nil) {
+        self.subject = subject
+        self.selection = selection
+    }
+
+    public init(_ tree: AmbientTree, app: String) {
+        if let title = Self.named(tree.display?.title) {
+            subject = title
+            selection = Self.named(tree.display?.detail)
+            return
+        }
+        let selected = tree.selected
+        let open = tree.focusPath.last { !$0.selected && $0.role != "Text" && Self.named($0.title) != nil }
+        subject = Self.named(open?.title) ?? app
+        guard let first = selected.first else { return }
+        if selected.count > 1 {
+            selection = "\(selected.count) selected"
+            return
+        }
+        // One thing selected. With nothing titled open around it (a
+        // browser's page, say), its own title is the subject.
+        let own = Self.named(first.title)
+        if open == nil, let own { subject = own }
+        if let range = AmbientSnapshot.lines(first.attributes) {
+            selection = range.count == 1 ? "line \(range.lowerBound)" : "lines \(range.lowerBound)–\(range.upperBound)"
+        } else if let own, own != subject {
+            selection = own
+        } else if first.role == "Text" || own == nil,
+                  let words = first.text?.split(whereSeparator: \.isWhitespace).count, words > 0 {
+            selection = words == 1 ? "1 word" : "\(words) words"
+        } else if own == nil {
+            selection = "1 selected"
+        }
+    }
+
+    // A title worth showing: one line, not blank.
+    private static func named(_ title: String?) -> String? {
+        guard let line = title?.split(whereSeparator: \.isNewline).first else { return nil }
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed.count > AmbientDisplay.maxChars ? String(trimmed.prefix(AmbientDisplay.maxChars)) + "…" : trimmed
+    }
+}
+
 // What one read of the front app gave: the tree, and the provider it came
 // from, so every id in it can be named in full.
 public struct AmbientSnapshot: Equatable, Sendable {
@@ -445,12 +572,8 @@ public struct AmbientSnapshot: Equatable, Sendable {
         (tree.selected.first ?? tree.focusPath.last).map { ref($0.id) }
     }
 
-    // What the composer's chip says: the title of what the user is
-    // pointing at, or the app's name.
-    public var title: String {
-        let pointed = tree.selected.first?.title ?? tree.focusPath.last(where: { $0.title != nil })?.title
-        return pointed ?? appName
-    }
+    // What the composer's context line says (AmbientSummary).
+    public var summary: AmbientSummary { AmbientSummary(tree, app: appName) }
 
     // The app's name: the tree's own, or the descriptor's.
     public var appName: String { tree.root.title ?? provider.descriptor.app.name }
@@ -564,7 +687,7 @@ public struct AmbientSnapshot: Equatable, Sendable {
     }
 
     // `lines` among an element's attributes: 1-based first and last.
-    private static func lines(_ attributes: [String: AmbientJSON]?) -> ClosedRange<Int>? {
+    static func lines(_ attributes: [String: AmbientJSON]?) -> ClosedRange<Int>? {
         guard case .number(let start)? = attributes?["lines"]?["start"],
               case .number(let end)? = attributes?["lines"]?["end"],
               let first = Int(exactly: start), let last = Int(exactly: end), first <= last
@@ -1020,7 +1143,21 @@ public struct AmbientAttachment: Sendable {
         return answer != nil
     }
 
-    // The user removed the chip, sent the message or closed the composer.
+    // Names the opening a later read belongs to (replace).
+    public var ticket: Int { generation }
+
+    // A later read of the same app, made when the user comes back to the
+    // composer: it takes the place of what is held. False when the opening
+    // read is still out, or the composer has closed, sent, reopened or had
+    // its context removed since `ticket`.
+    @discardableResult
+    public mutating func replace(_ answer: AmbientSnapshot, ticket: Int) -> Bool {
+        guard !waiting, ticket == generation else { return false }
+        snapshot = answer
+        return true
+    }
+
+    // The user removed the context, sent the message or closed the composer.
     public mutating func clear() {
         generation += 1
         snapshot = nil

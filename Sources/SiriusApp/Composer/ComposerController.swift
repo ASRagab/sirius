@@ -44,10 +44,13 @@ final class ComposerController {
     var onAside: ((_ agent: String, _ text: String, _ attachments: [URL], _ context: AmbientSnapshot?) -> Bool)?
     // What the app in front had open and selected when the composer
     // opened. The send reads that app again and sends the fresh answer,
-    // or this copy when the reread fails (AmbientSendRead). Nothing in the
-    // composer shows it for now; ContextTile is the tile it had, kept until
-    // that is decided.
+    // or this copy when the reread fails (AmbientSendRead). The composer
+    // says what it holds in one line (ContextLine).
     private var ambient = AmbientAttachment()
+    // The icon of the app the opening read, and its favicon when its
+    // bundle has one, for that line.
+    private var contextIcon: NSImage?
+    private var contextFavicon: Data?
     // The app the opening read, which the send reads again: the app behind
     // the composer, never Sirius. Nil when context is off, the user removed
     // it, or no app was behind.
@@ -104,6 +107,7 @@ final class ComposerController {
         panel.onNextAgent = { [weak self] in self?.nextAgent() }
         panel.onCancel = { [weak self] in self?.close() }
         panel.onAttach = { [weak self] urls in self?.attach(urls) }
+        panel.onReturn = { [weak self] in self?.refreshContext() }
         panel.onRemoveContext = { [weak self] in
             guard let self else { return }
             self.ambient.clear()
@@ -127,9 +131,6 @@ final class ComposerController {
     // comes back after a recording: the composer is then reachable only
     // from the menu, and the user needs to know (a sticky toast).
     var onShortcutUnavailable: ((KeyCombo) -> Void)?
-
-    // Whether the shortcut is registered now.
-    var shortcutRegistered: Bool { hotKey?.registered == true }
 
     // Registers the shortcut, once the caller has set onShortcutUnavailable.
     // A failure used to go to stderr only, /dev/null under launchd.
@@ -233,14 +234,44 @@ final class ComposerController {
         else { return ambient.clear() }
         let pid = front.processIdentifier
         contextSource = (pid, bundleID)
+        contextIcon = front.icon
+        contextFavicon = front.bundleURL.flatMap(AmbientFavicon.data(inBundle:))
         let read = readContext
         Task { [weak self] in
             let answer = await read(pid, bundleID)
             guard let self, self.ambient.accept(answer, ticket: ticket), let answer else { return }
+            self.showContext(answer)
             // Ids and counts only: what was selected is never logged.
             let via = answer.helper.map { " via helper \($0)" } ?? ""
             SiriusLog.composer.info("context from \(bundleID)\(via): \(answer.count) items")
         }
+    }
+
+    // The composer has the keys again: the user may have clicked into the
+    // app behind it and selected something else, which the send will read
+    // (rereadContext). The line reads it now, so it says what will go.
+    // Nothing happens while the opening's read is out, or once the context
+    // is removed.
+    private func refreshContext() {
+        guard !sending, !sent, let source = contextSource, SettingsKeys.ambientContextEnabled(in: defaults)
+        else { return }
+        let ticket = ambient.ticket
+        let read = readContext
+        Task { [weak self] in
+            guard let answer = await read(source.pid, source.bundleID), let self,
+                  self.ambient.replace(answer, ticket: ticket) else { return }
+            self.showContext(answer)
+        }
+    }
+
+    private func showContext(_ answer: AmbientSnapshot) {
+        let summary = answer.summary
+        let preview = answer.tree.selected.first?.text
+        panel.setContext(ContextLine.Model(
+            subject: summary.subject, selection: summary.selection, app: answer.appName, icon: contextIcon,
+            favicon: contextFavicon,
+            preview: preview
+        ))
     }
 
     // Selects `agent`, as the user's own switch would, and keeps it.

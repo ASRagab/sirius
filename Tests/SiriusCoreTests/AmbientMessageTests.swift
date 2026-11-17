@@ -68,8 +68,8 @@ final class AmbientMessageTests: XCTestCase {
     func testTheAnchorIsTheSelectionInFull() {
         let ref = snapshot().anchor
         XCTAssertEqual(ref, AmbientItemRef(bundleID: "org.humanitas.paper", pid: 42, instance: "run-1", id: "sel-3"))
-        XCTAssertEqual(snapshot().title, "Selection in draft.md")
-        XCTAssertEqual(snapshot(pointed: false).title, "Paper")
+        XCTAssertEqual(snapshot().summary, AmbientSummary(subject: "draft.md", selection: "lines 7–9"))
+        XCTAssertEqual(snapshot(pointed: false).summary, AmbientSummary(subject: "Paper"))
         XCTAssertNil(snapshot(pointed: false).anchor)
     }
 
@@ -212,7 +212,7 @@ final class AmbientMessageTests: XCTestCase {
         var held = AmbientAttachment()
         let ticket = held.begin()
         XCTAssertTrue(held.accept(snapshot(), ticket: ticket))
-        XCTAssertEqual(held.snapshot?.title, "Selection in draft.md")
+        XCTAssertEqual(held.snapshot?.summary.subject, "draft.md")
     }
 
     func testNoProviderLeavesNothing() {
@@ -239,6 +239,26 @@ final class AmbientMessageTests: XCTestCase {
         XCTAssertFalse(held.accept(snapshot(), ticket: first))
         XCTAssertNil(held.snapshot)
         XCTAssertTrue(held.accept(snapshot(), ticket: second))
+    }
+
+    // The user clicked into the app, selected something else and came
+    // back: the later read takes the place of the opening's.
+    func testAReadOnComingBackReplacesWhatWasHeld() {
+        var held = AmbientAttachment()
+        held.accept(snapshot(pointed: false), ticket: held.begin())
+        XCTAssertTrue(held.replace(snapshot(), ticket: held.ticket))
+        XCTAssertEqual(held.snapshot?.summary.selection, "lines 7–9")
+    }
+
+    func testAReadOnComingBackIsDroppedAfterRemovalOrWhileTheOpeningIsOut() {
+        var held = AmbientAttachment()
+        let opening = held.begin()
+        XCTAssertFalse(held.replace(snapshot(), ticket: held.ticket))
+        held.accept(snapshot(pointed: false), ticket: opening)
+        let ticket = held.ticket
+        held.clear()
+        XCTAssertFalse(held.replace(snapshot(), ticket: ticket))
+        XCTAssertNil(held.snapshot)
     }
 
     func testRemovingTheChipDropsWhatWasHeld() {

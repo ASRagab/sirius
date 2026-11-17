@@ -16,8 +16,12 @@ final class ComposerPanel: NSPanel {
     var onAttach: (([URL]) -> Void)?
     var onRemoveAttachment: ((URL) -> Void)?
     var onRemoveContext: (() -> Void)?
-    // The context tile, first in the row when there is one.
-    private var context: ContextTile.Model?
+    // The composer came back to the keys: the user may have been in the
+    // app behind it.
+    var onReturn: (() -> Void)?
+    // The context line, at the bottom left when there is context.
+    private var context: ContextLine.Model?
+    private let contextLine = ContextLine()
     private var attached: [URL] = []
     // The vertical padding scales with the text, 16/18 since it went to 16,
     // as the old padding was a bit much at the new size: text top 31 → 28,
@@ -172,6 +176,10 @@ final class ComposerPanel: NSPanel {
         tiles.translatesAutoresizingMaskIntoConstraints = false
         background.addSubview(tiles)
 
+        contextLine.isHidden = true
+        contextLine.onRemove = { [weak self] in self?.onRemoveContext?() }
+        background.addSubview(contextLine)
+
         // The agent's icon: 16 × 16, 21.5pt left of the pill.
         agentButton.isBordered = false
         agentButton.imagePosition = .imageOnly
@@ -239,6 +247,9 @@ final class ComposerPanel: NSPanel {
             fastBadge.trailingAnchor.constraint(equalTo: agentButton.leadingAnchor, constant: -6),
             fastBadge.centerYAnchor.constraint(equalTo: agentButton.centerYAnchor),
 
+            contextLine.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: Self.sideInset),
+            contextLine.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
+
             wavesView.widthAnchor.constraint(equalToConstant: DictationWaves.size.width),
             wavesView.heightAnchor.constraint(equalToConstant: DictationWaves.size.height),
             wavesView.centerXAnchor.constraint(equalTo: background.centerXAnchor),
@@ -257,6 +268,7 @@ final class ComposerPanel: NSPanel {
     override func becomeKey() {
         super.becomeKey()
         showCaret()
+        onReturn?()
     }
 
     @objc private func showCaret() {
@@ -283,27 +295,31 @@ final class ComposerPanel: NSPanel {
         rebuildTiles()
     }
 
-    // What the app in front had open and selected, as one tile ahead of
-    // the files; nil takes it away.
-    func setContext(_ model: ContextTile.Model?) {
+    // What the app behind has open and selected, as the line at the
+    // bottom left; nil takes it away. It fades in when it first shows.
+    func setContext(_ model: ContextLine.Model?) {
         guard context != model else { return }
+        let appearing = context == nil
         context = model
-        rebuildTiles()
+        guard let model else { return contextLine.isHidden = true }
+        contextLine.show(model)
+        contextLine.isHidden = false
+        guard appearing else { return }
+        contextLine.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { group in
+            group.duration = 0.18
+            contextLine.animator().alphaValue = 1
+        }
     }
 
     private func rebuildTiles() {
         for view in tiles.arrangedSubviews { view.removeFromSuperview() }
-        if let context {
-            let tile = ContextTile(context)
-            tile.onRemove = { [weak self] in self?.onRemoveContext?() }
-            tiles.addArrangedSubview(tile)
-        }
         for url in attached {
             let tile = AttachmentTile(url: url)
             tile.onRemove = { [weak self] in self?.onRemoveAttachment?(url) }
             tiles.addArrangedSubview(tile)
         }
-        let empty = attached.isEmpty && context == nil
+        let empty = attached.isEmpty
         let grow = empty != tiles.isHidden
         tiles.isHidden = empty
         // The text moves down to 10 below the tiles (.capture-files' margin).

@@ -309,7 +309,7 @@ final class AmbientDelegatedTests: XCTestCase {
 
         let snapshot = try await source(system).snapshot(frontPID: 7000, bundleID: app)
         XCTAssertEqual(snapshot.helper, 7002)
-        XCTAssertEqual(snapshot.title, "In front")
+        XCTAssertEqual(snapshot.summary.subject, "In front")
         XCTAssertEqual(fake.requests.count, 1)
         XCTAssertEqual(other.requests.count, 1)
         XCTAssertEqual(other.requests.first?.headers["authorization"], "Bearer second-token")

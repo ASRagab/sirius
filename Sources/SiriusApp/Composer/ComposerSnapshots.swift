@@ -15,11 +15,27 @@ enum ComposerSnapshots {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let long = (1...30).map { "Line \($0): the composer grows to twelve lines, then scrolls with fades." }
             .joined(separator: "\n")
-        let shots: [(name: String, text: String, scroll: CGFloat?)] = [
-            ("1-short", "Summarise the open pull requests and flag anything blocked.", nil),
-            ("2-long-bottom", long, 1),
-            ("3-long-middle", long, 0.5),
-            ("4-long-top", long, 0),
+        let icon = NSWorkspace.shared.icon(forFile: "/System/Applications/TextEdit.app")
+        // A stand-in for an app's favicon: a sheet with a folded corner.
+        let sheet = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#ECECEC" fill-rule="evenodd" \
+        d="M3 1h6.5L13 4.5V15H3zM4.5 2.5v11h7V5.5H8.5v-3zM6 8h4v1.2H6zM6 10.4h4v1.2H6z"/></svg>
+        """
+        func context(_ subject: String, _ selection: String?, favicon: String? = nil) -> ContextLine.Model {
+            ContextLine.Model(subject: subject, selection: selection, app: "TextEdit", icon: icon,
+                              favicon: favicon.map { Data($0.utf8) })
+        }
+        let shots: [(name: String, text: String, scroll: CGFloat?, context: ContextLine.Model?)] = [
+            ("1-short", "Summarise the open pull requests and flag anything blocked.", nil, nil),
+            ("2-long-bottom", long, 1, nil),
+            ("3-long-middle", long, 0.5, nil),
+            ("4-long-top", long, 0, nil),
+            ("5-context", "Tighten this paragraph.", nil, context("release-runbook.md", "lines 12–18")),
+            ("5b-context-favicon", "Tighten this paragraph.", nil,
+             context("release-runbook.md", "lines 12–18", favicon: sheet)),
+            ("6-context-subject", "What is missing here?", nil, context("release-runbook.md", nil)),
+            ("7-context-long", "Reply to these.", nil,
+             context("Quarterly planning and budget review for the whole team.numbers", "3 selected")),
         ]
         for shot in shots {
             let panel = ComposerPanel()
@@ -28,6 +44,7 @@ enum ComposerSnapshots {
             panel.alphaValue = 1
             panel.orderFrontRegardless()
             panel.textView.string = shot.text
+            panel.setContext(shot.context)
             panel.fitHeight()
             let clip = panel.textView.enclosingScrollView?.contentView
             if let fraction = shot.scroll, let clip {
