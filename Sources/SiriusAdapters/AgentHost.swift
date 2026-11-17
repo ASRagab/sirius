@@ -364,7 +364,8 @@ public actor AgentHost {
                                        onUserError: {
                                            report("Sirius: \(id): \($0)")
                                            problem(id, $0)
-                                       })
+                                       },
+                                       report: { report("Sirius: \($0)") })
             commands.register(queue, for: id)
             hosted[id] = Hosted(entry: entry, storage: storage, queue: queue)
             order.append(id)

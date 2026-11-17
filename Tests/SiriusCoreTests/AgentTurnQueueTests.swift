@@ -39,6 +39,28 @@ final class AgentTurnQueueTests: XCTestCase {
         XCTAssertEqual(adapter.starts, [nil])
     }
 
+    // A state write that fails is reported; an ordinary run reports nothing.
+    func testAFailedStateWriteIsReported() async throws {
+        let storage = try AgentStorage(agent: "dev", baseDirectory: base)
+        try storage.prepare()
+        let said = Said()
+        let adapter = FakeAdapter(startSession: "thread-1", turnSession: "thread-2")
+        let queue = AgentTurnQueue(adapter: adapter, log: try storage.openLog(), storage: storage,
+                                   report: { said.add($0) })
+        try await queue.send(message(1))
+        try await adapter.waitForDeliveries(1)
+        for _ in 0..<500 where (try? storage.readState().session) != "thread-2" {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(said.all, [], "nothing to report when every write lands")
+
+        XCTAssertEqual(chmod(storage.directory.path, 0o500), 0)
+        defer { chmod(storage.directory.path, 0o700) }
+        await queue.note("left for the next message")
+        XCTAssertEqual(said.all.count, 1, "\(said.all)")
+        XCTAssertTrue(said.all.first?.contains("dev: state.json was not written") ?? false, "\(said.all)")
+    }
+
     func testSessionsArePersistedFromStartAndTurnEnd() async throws {
         let adapter = FakeAdapter(startSession: "thread-1", turnSession: "thread-2")
         let (queue, storage, _) = try makeQueue(adapter)
@@ -566,4 +588,11 @@ final class FakeAdapter: Adapter, @unchecked Sendable {
     func waitForStarted(_ count: Int) async throws {
         for _ in 0..<500 where lock.withLock({ _startedTurns }) < count { try await Task.sleep(nanoseconds: 10_000_000) }
     }
+}
+
+private final class Said: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+    func add(_ line: String) { lock.withLock { lines.append(line) } }
+    var all: [String] { lock.withLock { lines } }
 }
