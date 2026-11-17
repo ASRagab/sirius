@@ -234,12 +234,24 @@ public struct AgentRegistry: Sendable {
             }
             let fast = try flag("fast").get()
             let enabled = try flag("enabled").get()
+            // Whole numbers of at least 0: minutes, and tokens.
+            func count(_ key: String) -> Result<Int?, RegistryError> {
+                guard let field = object[key], field != .null else { return .success(nil) }
+                guard let whole = field.safeInteger, whole >= 0, let value = Int(exactly: whole) else {
+                    return .failure(.malformed("\(key) is not a whole number of at least 0"))
+                }
+                return .success(value)
+            }
+            let consolidateAfterIdle = try count("consolidate_after_idle").get()
+            let consolidateThreshold = try count("consolidate_threshold").get()
             guard let harness = AgentRegistration.Harness(rawValue: harnessName) else {
                 return .failure(.unknownHarness(harnessName))
             }
             return .success(AgentRegistration(agent: agent, name: name, harness: harness,
                                               executable: executable, root: root, voice: voice,
-                                              model: model, effort: effort, fast: fast, enabled: enabled))
+                                              model: model, effort: effort, fast: fast,
+                                              consolidateAfterIdle: consolidateAfterIdle,
+                                              consolidateThreshold: consolidateThreshold, enabled: enabled))
         } catch {
             // Result.get() throws the typed RegistryError.
             return .failure(error)

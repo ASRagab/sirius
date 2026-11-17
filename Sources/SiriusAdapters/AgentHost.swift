@@ -66,7 +66,6 @@ public actor AgentHost {
         var entry: RegisteredAgent
         var storage: AgentStorage
         var queue: AgentTurnQueue
-        var state: AgentSummary.State
     }
 
     // Sorted by id, as the registry returns them.
@@ -266,7 +265,9 @@ public actor AgentHost {
                 }
             }
             for await (id, failure, message) in group {
-                guard hosted[id]?.state == .starting else { continue }
+                // Not for an agent stopped or replaced while it started.
+                guard !stopped, let queue = queues.first(where: { $0.0 == id })?.1,
+                      hosted[id]?.queue === queue else { continue }
                 if let failure {
                     report("Sirius: \(id) did not start: \(failure)")
                     if let message {
@@ -274,9 +275,6 @@ public actor AgentHost {
                     } else if let name = hosted[id]?.entry.registration.name {
                         alert(name, Self.alertText(didNotStart: failure))
                     }
-                    hosted[id]?.state = .failed(failure)
-                } else {
-                    hosted[id]?.state = .running
                 }
             }
         }
@@ -299,7 +297,6 @@ public actor AgentHost {
         for (id, _) in all {
             server.remove(agent: id)
             commands.unregister(agent: id)
-            hosted[id]?.state = .stopped
         }
     }
 
@@ -343,7 +340,7 @@ public actor AgentHost {
                                            problem(id, $0)
                                        })
             commands.register(queue, for: id)
-            hosted[id] = Hosted(entry: entry, storage: storage, queue: queue, state: .starting)
+            hosted[id] = Hosted(entry: entry, storage: storage, queue: queue)
             order.append(id)
         } catch {
             report("Sirius: \(id) skipped: \(error)")
@@ -418,13 +415,17 @@ public actor AgentHost {
     // MARK: The composer's seam
 
     // Every agent set up at start, sorted by id. Stopped ones stay listed.
-    public func agents() -> [AgentSummary] {
-        order.compactMap { id in
-            guard let hosted = hosted[id] else { return nil }
+    // Each one's state is asked of its queue, which alone knows it.
+    public func agents() async -> [AgentSummary] {
+        var summaries: [AgentSummary] = []
+        for id in order {
+            guard let hosted = hosted[id] else { continue }
             let registration = hosted.entry.registration
-            return AgentSummary(agent: id, name: registration.name, harness: registration.harness,
-                                root: registration.root, state: hosted.state, fast: registration.isFast)
+            summaries.append(AgentSummary(agent: id, name: registration.name, harness: registration.harness,
+                                          root: registration.root, state: await hosted.queue.runState,
+                                          fast: registration.isFast))
         }
+        return summaries
     }
 
     // Copies each attachment into the agent's attachments/<message>/, logs
@@ -582,17 +583,7 @@ public struct AgentSummary: Equatable, Sendable {
     // The registration's fast mode, shown as a bolt left of the logo.
     public var fast: Bool
 
-    // Whether the agent process is up. Whether a turn is running is not
-    // tracked here.
-    public enum State: Equatable, Sendable {
-        // Warm start in flight.
-        case starting
-        // Started; messages go straight to it.
-        case running
-        // The warm start failed; the next message tries again.
-        case failed(String)
-        case stopped
-    }
+    public typealias State = AgentTurnQueue.RunState
 
     public init(agent: String, name: String, harness: AgentRegistration.Harness, root: String, state: State,
                 fast: Bool = false) {
