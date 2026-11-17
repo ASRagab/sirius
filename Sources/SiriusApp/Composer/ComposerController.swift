@@ -51,6 +51,14 @@ final class ComposerController {
     // bundle has one, for that line.
     private var contextIcon: NSImage?
     private var contextFavicon: Data?
+    // The watch on the app the opening read, and the one-read-at-a-time
+    // rule for the reads its notices cause (startWatch).
+    private var watch: Task<Void, Never>?
+    private var rereads = AmbientRereads()
+    // Opens a watch on a provider. Replaced in tests.
+    var watchContext: @Sendable (AmbientProvider) -> AsyncStream<AmbientWatchEvent> = { provider in
+        AmbientClient(provider: provider).watch()
+    }
     // The app the opening read, which the send reads again: the app behind
     // the composer, never Sirius. Nil when context is off, the user removed
     // it, or no app was behind.
@@ -107,11 +115,12 @@ final class ComposerController {
         panel.onNextAgent = { [weak self] in self?.nextAgent() }
         panel.onCancel = { [weak self] in self?.close() }
         panel.onAttach = { [weak self] urls in self?.attach(urls) }
-        panel.onReturn = { [weak self] in self?.refreshContext() }
+        panel.onReturn = { [weak self] in self?.contextChanged() }
         panel.onRemoveContext = { [weak self] in
             guard let self else { return }
             self.ambient.clear()
             self.contextSource = nil
+            self.stopWatch()
             self.panel.setContext(nil)
             SiriusLog.composer.info("context removed")
         }
@@ -228,6 +237,7 @@ final class ComposerController {
     private func loadContext(from front: NSRunningApplication?) {
         let ticket = ambient.begin()
         contextSource = nil
+        stopWatch()
         panel.setContext(nil)
         guard SettingsKeys.ambientContextEnabled(in: defaults), let front, front != .current,
               let bundleID = front.bundleIdentifier
@@ -241,26 +251,77 @@ final class ComposerController {
             let answer = await read(pid, bundleID)
             guard let self, self.ambient.accept(answer, ticket: ticket), let answer else { return }
             self.showContext(answer)
+            self.startWatch(on: answer.provider)
             // Ids and counts only: what was selected is never logged.
             let via = answer.helper.map { " via helper \($0)" } ?? ""
             SiriusLog.composer.info("context from \(bundleID)\(via): \(answer.count) items")
         }
     }
 
-    // The composer has the keys again: the user may have clicked into the
-    // app behind it and selected something else, which the send will read
-    // (rereadContext). The line reads it now, so it says what will go.
-    // Nothing happens while the opening's read is out, or once the context
-    // is removed.
-    private func refreshContext() {
+    // While the composer is open the user can click into the app behind
+    // it and select something else, which the send will read
+    // (rereadContext). The line follows, so it says what will go, and it
+    // learns of a change in two ways, never by asking on a timer:
+    //  - the app says so. A provider that offers a watch (protocol 0.2.2,
+    //    RFC-0006) is asked to say when its context changes, for as long
+    //    as the composer shows it. It says only "changed"; the app is then
+    //    read again, as at any other time.
+    //  - the composer gets the keys back, which is the user returning
+    //    from the app.
+    // One watch, on the provider the opening read. It ends when the
+    // composer closes, sends, or has its context removed. If it is lost
+    // after it was held, it is opened once more and then left; the line
+    // keeps what it last read and nothing is shown to the user.
+    private func startWatch(on provider: AmbientProvider) {
+        stopWatch()
+        guard AmbientClient.offersWatch(provider.descriptor.protocol) else { return }
+        let open = watchContext
+        let app = provider.descriptor.app.id
+        watch = Task { [weak self] in
+            for attempt in 1...2 {
+                var held = false
+                for await event in open(provider) {
+                    switch event {
+                    case .acknowledged:
+                        held = true
+                        SiriusLog.composer.info("watching context from \(app)")
+                    case .changed:
+                        self?.contextChanged()
+                    }
+                }
+                if Task.isCancelled { return }
+                SiriusLog.composer.info("watch on \(app) ended (attempt \(attempt), held: \(held))")
+                // One that was never held is not offered; do not ask again.
+                guard held else { return }
+            }
+        }
+    }
+
+    private func stopWatch() {
+        watch?.cancel()
+        watch = nil
+        rereads.reset()
+    }
+
+    // A reason to read the app again: its notice, or the composer coming
+    // back to the keys. One read at a time (AmbientRereads).
+    private func contextChanged() {
+        if rereads.notice() { rereadForLine() }
+    }
+
+    // Nothing is read while a send is out, or once the context is removed;
+    // an answer for an opening that has since ended is dropped (replace).
+    private func rereadForLine() {
         guard !sending, !sent, let source = contextSource, SettingsKeys.ambientContextEnabled(in: defaults)
-        else { return }
+        else { return rereads.reset() }
         let ticket = ambient.ticket
         let read = readContext
         Task { [weak self] in
-            guard let answer = await read(source.pid, source.bundleID), let self,
-                  self.ambient.replace(answer, ticket: ticket) else { return }
-            self.showContext(answer)
+            let answer = await read(source.pid, source.bundleID)
+            guard let self else { return }
+            // A read that fails keeps the line as it was.
+            if let answer, self.ambient.replace(answer, ticket: ticket) { self.showContext(answer) }
+            if self.rereads.finished() { self.rereadForLine() }
         }
     }
 
@@ -301,6 +362,7 @@ final class ComposerController {
     func close(restore: Bool = true, then gone: @escaping () -> Void = {}) {
         let previous = previous
         self.previous = nil
+        stopWatch()
         // A read still on its way is no longer wanted; what is held stays
         // for the send that is closing the panel.
         if !sent {
@@ -362,6 +424,7 @@ final class ComposerController {
         // throws, which beeps below and keeps the text.
         guard let agent = current else { return NSSound.beep() }
         sending = true
+        stopWatch()
         let files = attachments
         let held = ambient.snapshot
         // An opening read that has not answered yet is not waited for and
@@ -393,6 +456,7 @@ final class ComposerController {
         guard !sending, !text.isEmpty || !attachments.isEmpty else { return }
         guard let agent = current, let onAside else { return NSSound.beep() }
         sending = true
+        stopWatch()
         let files = attachments
         let held = ambient.snapshot
         if held == nil { ambient.clear() }

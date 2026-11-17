@@ -936,7 +936,7 @@ public struct AmbientClient: Sendable {
         return answer
     }
 
-    private static func configuration(limit: TimeInterval) -> URLSessionConfiguration {
+    static func configuration(limit: TimeInterval) -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = limit
         configuration.timeoutIntervalForResource = limit
@@ -961,6 +961,216 @@ public struct AmbientClient: Sendable {
         }
         var result: Result?
         var error: Failure?
+    }
+}
+
+// MARK: - Watching
+
+// What a watch says. `acknowledged` once, when the provider has agreed to
+// say when `current` changes; `changed` each time it does. Neither carries
+// anything from the app: the new state is learned by reading `current`
+// again, through every check a read has.
+public enum AmbientWatchEvent: Equatable, Sendable {
+    case acknowledged
+    case changed
+}
+
+extension AmbientClient {
+    // The request id of a watch, which its notices name.
+    static let watchID = 2
+    static let updatedMethod = "notifications/resources/updated"
+    static let acknowledgedMethod = "notifications/subscriptions/acknowledged"
+    // The longest line of the stream that is read. A notice is a few
+    // hundred bytes; a provider that sends more is not being watched.
+    static let maxWatchLine = 16 * 1024
+
+    // Whether a provider in this version of the protocol may offer a
+    // watch: 0.2.2 and later (RFC-0006). One that does not is never asked.
+    public static func offersWatch(_ version: String) -> Bool {
+        let parts = version.split(separator: ".", omittingEmptySubsequences: false)
+        guard AmbientDescriptor.supports(version), let patch = UInt(parts[2]) else { return false }
+        return patch >= 2
+    }
+
+    // The watch request as it goes on the wire: MCP's `subscriptions/listen`
+    // for `current` alone, to the same endpoint with the same token as a
+    // read, answered by an event stream on that response.
+    func watchRequest(quiet: TimeInterval) -> URLRequest {
+        var request = URLRequest(url: provider.endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = quiet
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(provider.descriptor.token)", forHTTPHeaderField: "Authorization")
+        request.setValue(Self.mcpVersion, forHTTPHeaderField: "MCP-Protocol-Version")
+        request.setValue("subscriptions/listen", forHTTPHeaderField: "Mcp-Method")
+        let body: [String: Any] = [
+            "jsonrpc": "2.0",
+            "id": Self.watchID,
+            "method": "subscriptions/listen",
+            "params": [
+                "notifications": ["resourceSubscriptions": [Self.currentURI]],
+                "_meta": [
+                    "io.modelcontextprotocol/protocolVersion": Self.mcpVersion,
+                    "io.modelcontextprotocol/clientCapabilities": [String: Any](),
+                ] as [String: Any],
+            ] as [String: Any],
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        return request
+    }
+
+    // Asks the provider to say when its answer to `current` changes, and
+    // gives each thing it says until the watch is over. It is over when
+    // the caller stops listening, when the provider ends it or quits, when
+    // the connection is lost, when the provider refuses or does not offer
+    // it, when it has not acknowledged within `acknowledgeWithin`, when
+    // the stream has been silent for `quiet` (a provider keeps a quiet
+    // watch alive every 15 s), or when it sends anything a watch on
+    // `current` should not. None of these is an error to anyone: the
+    // stream simply finishes.
+    public func watch(acknowledgeWithin: TimeInterval = 2, quiet: TimeInterval = 40) -> AsyncStream<AmbientWatchEvent> {
+        let request = watchRequest(quiet: quiet)
+        return AsyncStream { continuation in
+            let task = Task {
+                defer { continuation.finish() }
+                let configuration = Self.configuration(limit: quiet)
+                // The watch lasts as long as the composer is open.
+                configuration.timeoutIntervalForResource = 24 * 60 * 60
+                let session = URLSession(configuration: configuration)
+                defer { session.invalidateAndCancel() }
+                // The deadline runs from the request, not from the
+                // response: a response with no body yet may not be
+                // handed over until its first bytes arrive.
+                let acknowledged = WatchFlag()
+                let deadline = Task {
+                    try? await Task.sleep(nanoseconds: UInt64(acknowledgeWithin * 1_000_000_000))
+                    if !Task.isCancelled, !acknowledged.isSet { session.invalidateAndCancel() }
+                }
+                defer { deadline.cancel() }
+                guard let (bytes, response) = try? await session.bytes(for: request, delegate: RedirectRefuser()),
+                      let http = response as? HTTPURLResponse, http.statusCode == 200,
+                      (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().hasPrefix("text/event-stream")
+                else { return }
+
+                // Server-sent events, read a byte at a time: lines end in
+                // LF or CRLF, an empty line ends an event, a line starting
+                // with a colon is a comment (the keep-alive).
+                var line: [UInt8] = []
+                var data: [String] = []
+                do {
+                    for try await byte in bytes {
+                        if byte != 0x0A {
+                            guard line.count < Self.maxWatchLine else { return }
+                            line.append(byte)
+                            continue
+                        }
+                        if line.last == 0x0D { line.removeLast() }
+                        let text = String(decoding: line, as: UTF8.self)
+                        line.removeAll(keepingCapacity: true)
+                        if !text.isEmpty {
+                            if text.hasPrefix("data:") {
+                                let value = text.dropFirst(5)
+                                data.append(String(value.first == " " ? value.dropFirst() : value))
+                            }
+                            continue
+                        }
+                        guard !data.isEmpty else { continue }
+                        let event = data.joined(separator: "\n")
+                        data.removeAll()
+                        switch Self.watchMessage(event) {
+                        case .acknowledged:
+                            guard !acknowledged.isSet else { continue }
+                            acknowledged.set()
+                            continuation.yield(.acknowledged)
+                        case .changed:
+                            // A notice before the acknowledgment is not
+                            // the watch that was asked for.
+                            guard acknowledged.isSet else { return }
+                            continuation.yield(.changed)
+                        case .other:
+                            continue
+                        case .over:
+                            return
+                        }
+                    }
+                } catch {
+                    return
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    enum WatchMessage: Equatable { case acknowledged, changed, other, over }
+
+    // What one event of the stream means. A notice counts only for
+    // `current` and only for this watch; the request's own result or error
+    // is the provider ending it; a notice for anything else ends it too,
+    // since a provider never sends what was not asked for.
+    static func watchMessage(_ event: String) -> WatchMessage {
+        guard let json = (try? JSONSerialization.jsonObject(with: Data(event.utf8))) as? [String: Any] else {
+            return .over
+        }
+        if json["result"] != nil || json["error"] != nil { return .over }
+        guard let method = json["method"] as? String else { return .other }
+        let params = json["params"] as? [String: Any]
+        let meta = params?["_meta"] as? [String: Any]
+        if let id = meta?["io.modelcontextprotocol/subscriptionId"], (id as? Int) != watchID { return .over }
+        switch method {
+        case acknowledgedMethod:
+            return .acknowledged
+        case updatedMethod:
+            return params?["uri"] as? String == currentURI ? .changed : .over
+        default:
+            return method.hasPrefix("notifications/") ? .over : .other
+        }
+    }
+}
+
+private final class WatchFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var isSet: Bool { lock.withLock { value } }
+    func set() { lock.withLock { value = true } }
+}
+
+// One read at a time, however many reasons there are to read: a notice
+// that arrives while a read is out is remembered, and one more read is
+// made when that read ends. Ten notices during one read make one more
+// read, not ten.
+public struct AmbientRereads: Equatable, Sendable {
+    private var reading = false
+    private var again = false
+
+    public init() {}
+
+    // A reason to read. True when the caller should start a read now.
+    public mutating func notice() -> Bool {
+        if reading {
+            again = true
+            return false
+        }
+        reading = true
+        return true
+    }
+
+    // A read ended. True when the caller should read once more.
+    public mutating func finished() -> Bool {
+        if again {
+            again = false
+            return true
+        }
+        reading = false
+        return false
+    }
+
+    // Nothing is wanted any more: the composer closed, sent or lost its
+    // context.
+    public mutating func reset() {
+        reading = false
+        again = false
     }
 }
 

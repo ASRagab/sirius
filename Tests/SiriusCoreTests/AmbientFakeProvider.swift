@@ -24,6 +24,9 @@ final class AmbientFakeProvider: @unchecked Sendable {
         var headers: [String: String] = ["Content-Type": "application/json"]
         var body = Data()
         var delay: TimeInterval = 0
+        // An event stream that stays open (a watch): the head is sent and
+        // the connection kept.
+        var stream = false
 
         static func json(_ object: Any, status: Int = 200) -> Reply {
             Reply(status: status, body: (try? JSONSerialization.data(withJSONObject: object)) ?? Data())
@@ -37,6 +40,12 @@ final class AmbientFakeProvider: @unchecked Sendable {
     private let lock = NSLock()
     private var received: [Request] = []
     private var script: (@Sendable (Request) -> Reply?)?
+    private var watches: [(connection: NWConnection, id: Any)] = []
+
+    // Whether it offers a watch on `current` (protocol 0.2.2), and whether
+    // it acknowledges one it is asked for.
+    var offersWatch = false
+    var acknowledgesWatch = true
 
     // What the provider answers when no script overrides it.
     var bundleID = "org.example.editor"
@@ -204,6 +213,8 @@ final class AmbientFakeProvider: @unchecked Sendable {
                 return .json(Self.read(id, uri, location))
             }
             return .json(Self.failure(id, -32602, "Resource not found"))
+        case "subscriptions/listen" where offersWatch:
+            return Reply(headers: ["Content-Type": "text/event-stream"], stream: true)
         default:
             return .json(Self.failure(id, -32601, "Method not found"), status: 404)
         }
@@ -229,6 +240,85 @@ final class AmbientFakeProvider: @unchecked Sendable {
         ["jsonrpc": "2.0", "id": id ?? NSNull(), "error": ["code": code, "message": message]]
     }
 
+    // MARK: Watches
+
+    var watchCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return watches.count
+    }
+
+    private func hold(_ connection: NWConnection, id: Any) {
+        let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
+        connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
+        lock.lock()
+        watches.append((connection, id))
+        lock.unlock()
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .cancelled, .failed: self?.drop(connection)
+            default: break
+            }
+        }
+        // The host hanging up is seen as the end of what it sends.
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { [weak self] _, _, finished, error in
+            if finished || error != nil {
+                connection.cancel()
+                self?.drop(connection)
+            }
+        }
+        if acknowledgesWatch {
+            event(["jsonrpc": "2.0", "method": "notifications/subscriptions/acknowledged", "params": [
+                "_meta": ["io.modelcontextprotocol/subscriptionId": id],
+                "notifications": ["resourceSubscriptions": ["ambient://current"]],
+            ] as [String: Any]], on: connection)
+        }
+    }
+
+    private func drop(_ connection: NWConnection) {
+        lock.lock()
+        watches.removeAll { $0.connection === connection }
+        lock.unlock()
+    }
+
+    private func event(_ message: [String: Any], on connection: NWConnection) {
+        let json = String(data: (try? JSONSerialization.data(withJSONObject: message)) ?? Data(), encoding: .utf8) ?? ""
+        connection.send(content: Data("data: \(json)\r\n\r\n".utf8), completion: .contentProcessed { _ in })
+    }
+
+    private var held: [(connection: NWConnection, id: Any)] {
+        lock.lock(); defer { lock.unlock() }
+        return watches
+    }
+
+    // Says "changed" on every watch held, for `uri`.
+    func notify(uri: String = "ambient://current") {
+        for watch in held {
+            event(["jsonrpc": "2.0", "method": "notifications/resources/updated", "params": [
+                "_meta": ["io.modelcontextprotocol/subscriptionId": watch.id], "uri": uri,
+            ] as [String: Any]], on: watch.connection)
+        }
+    }
+
+    // The keep-alive a quiet watch carries.
+    func comment() {
+        for watch in held {
+            watch.connection.send(content: Data(": keep-alive\n\n".utf8), completion: .contentProcessed { _ in })
+        }
+    }
+
+    // Ends every watch: with the request's own result first when
+    // `gracefully`, else by closing.
+    func endWatches(gracefully: Bool = false) {
+        for watch in held {
+            if gracefully {
+                event(Self.success(watch.id, ["resultType": "complete"]), on: watch.connection)
+            }
+            watch.connection.send(content: nil, isComplete: true, completion: .contentProcessed { _ in
+                watch.connection.cancel()
+            })
+        }
+    }
+
     // MARK: HTTP
 
     private func accept(_ connection: NWConnection) {
@@ -243,6 +333,7 @@ final class AmbientFakeProvider: @unchecked Sendable {
             if let data { buffer.append(data) }
             if let request = Self.parse(buffer) {
                 let reply = self.answer(request)
+                if reply.stream { return self.hold(connection, id: request.json?["id"] ?? NSNull()) }
                 self.queue.asyncAfter(deadline: .now() + reply.delay) { Self.send(reply, on: connection) }
             } else if finished || error != nil {
                 connection.cancel()
