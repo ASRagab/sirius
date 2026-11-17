@@ -327,6 +327,58 @@ final class AgentHostTests: XCTestCase {
         XCTAssertEqual(Set(server.agents), ["alpha", "beta", "gamma"])
     }
 
+    // Two reloads at once restart a changed agent once, not twice with the
+    // first replacement left running and unowned.
+    func testOverlappingReloadsRestartAChangedAgentOnce() async throws {
+        try register("alpha")
+        let host = makeHost()
+        await host.start()
+        let first = try XCTUnwrap(adapters.adapter("alpha"))
+        first.closeDelay = 0.2
+        try AgentRegistry(directory: registryDirectory).write(AgentRegistration(
+            agent: "alpha", name: "Renamed", harness: .claudeCode, executable: "/usr/bin/true", root: base))
+
+        async let one: Void = host.reload()
+        async let two: Void = host.reload()
+        _ = await (one, two)
+
+        XCTAssertEqual(adapters.count("alpha"), 2, "the first, and one replacement")
+        XCTAssertEqual(adapters.adapter("alpha")?.stops, 0)
+        let states = await host.agents().map(\.state)
+        XCTAssertEqual(states, [.running])
+        await host.stopAll()
+    }
+
+    // An agent moved to a new folder is not started there on its old
+    // session: when the session cannot be cleared it stays out, and the
+    // next reload clears it first.
+    func testAnAgentWhoseSessionCannotBeClearedIsNotStartedOnItsNewRoot() async throws {
+        try register("alpha")
+        let host = makeHost()
+        await host.start()
+        let storage = try AgentStorage(agent: "alpha", baseDirectory: storageDirectory)
+        try storage.writeState(AgentState(session: "old"))
+        let moved = base + "/elsewhere"
+        XCTAssertEqual(mkdir(moved, 0o700), 0)
+        try AgentRegistry(directory: registryDirectory).write(AgentRegistration(
+            agent: "alpha", name: "Alpha", harness: .claudeCode, executable: "/usr/bin/true", root: moved))
+
+        XCTAssertEqual(chmod(storage.directory.path, 0o500), 0)
+        await host.reload()
+        XCTAssertEqual(chmod(storage.directory.path, 0o700), 0)
+        XCTAssertEqual(adapters.count("alpha"), 1, "not started on the new root")
+        let none = await host.agents().map(\.agent)
+        XCTAssertEqual(none, [])
+        XCTAssertTrue(reports.all.contains { $0.contains("alpha") && $0.contains("not started") }, "\(reports.all)")
+
+        await host.reload()
+        let alpha = try XCTUnwrap(adapters.adapter("alpha"))
+        XCTAssertEqual(adapters.count("alpha"), 2)
+        XCTAssertEqual(alpha.context.registration.root, moved)
+        XCTAssertEqual(alpha.sessions, [nil], "the old root's session was cleared first")
+        await host.stopAll()
+    }
+
     func testAnAgentThatIsOffIsNeverStartedOrSentTo() async throws {
         try register("alpha")
         try register("beta", enabled: false)
@@ -649,6 +701,7 @@ final class RecordingQueue: CommandQueue, @unchecked Sendable {
 final class HostFakeAdapters: @unchecked Sendable {
     private let lock = NSLock()
     private var made: [String: HostFakeAdapter] = [:]
+    private var counts: [String: Int] = [:]
     private var _turnDelay: Double = 0
     private var _failStart: Set<String> = []
 
@@ -665,11 +718,16 @@ final class HostFakeAdapters: @unchecked Sendable {
     func make(_ context: AgentHost.AdapterContext) -> any Adapter {
         let adapter = HostFakeAdapter(context: context, turnDelay: turnDelay,
                                       failStart: failStart.contains(context.registration.agent))
-        lock.withLock { made[context.registration.agent] = adapter }
+        lock.withLock {
+            made[context.registration.agent] = adapter
+            counts[context.registration.agent, default: 0] += 1
+        }
         return adapter
     }
 
     func adapter(_ agent: String) -> HostFakeAdapter? { lock.withLock { made[agent] } }
+    // How many adapters were made for the agent.
+    func count(_ agent: String) -> Int { lock.withLock { counts[agent] ?? 0 } }
 }
 
 final class HostFakeAdapter: Adapter, @unchecked Sendable {
@@ -678,6 +736,7 @@ final class HostFakeAdapter: Adapter, @unchecked Sendable {
     let context: AgentHost.AdapterContext
     private let turnDelay: Double
     private var _failStart: Bool
+    private var _closeDelay: Double = 0
     private let lock = NSLock()
     private var _starts = 0
     private var _stops = 0
@@ -698,6 +757,10 @@ final class HostFakeAdapter: Adapter, @unchecked Sendable {
     var failStart: Bool {
         get { lock.withLock { _failStart } }
         set { lock.withLock { _failStart = newValue } }
+    }
+    var closeDelay: Double {
+        get { lock.withLock { _closeDelay } }
+        set { lock.withLock { _closeDelay = newValue } }
     }
     var starts: Int { lock.withLock { _starts } }
     var stops: Int { lock.withLock { _stops } }
@@ -731,7 +794,10 @@ final class HostFakeAdapter: Adapter, @unchecked Sendable {
 
     func compact() async throws -> Consolidation? { nil }
 
-    func close() async { lock.withLock { _stops += 1 } }
+    func close() async {
+        lock.withLock { _stops += 1 }
+        try? await Task.sleep(nanoseconds: UInt64(closeDelay * 1_000_000_000))
+    }
 
     func waitForDelivery() async throws {
         for _ in 0..<500 where messages.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }

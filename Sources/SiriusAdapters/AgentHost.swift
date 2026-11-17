@@ -73,6 +73,11 @@ public actor AgentHost {
     private var hosted: [String: Hosted] = [:]
     private var started = false
     private var stopped = false
+    // The reload in flight; the next waits for it, so two never interleave.
+    private var reloading: Task<Void, Never>?
+    // Agents moved to a new root whose old session could not be cleared.
+    // Not started until it is.
+    private var uncleared: Set<String> = []
     private var memoryTrigger = WorkingMemoryTrigger()
     private var memoryWatcher: FileWatcher?
 
@@ -219,7 +224,18 @@ public actor AgentHost {
     // session, since the old one belongs to the old folder. An agent turned
     // off is stopped and taken out; one turned on starts warm. Agents that
     // are unchanged keep running; a removed folder leaves its agent as it is.
+    // One at a time: a reload asked for while another runs waits its turn.
     public func reload() async {
+        let earlier = reloading
+        let task = Task {
+            await earlier?.value
+            await reloadOnce()
+        }
+        reloading = task
+        await task.value
+    }
+
+    private func reloadOnce() async {
         guard !stopped else { return }
         guard started else { return await start() }
         let scan = scanRegistry()
@@ -232,12 +248,22 @@ public actor AgentHost {
             if let current = hosted[id] {
                 guard current.entry != entry else { continue }
                 await current.queue.stop()
+                // stopAll() ran meanwhile: nothing is started after it.
+                guard !stopped else { return }
                 server.remove(agent: id)
                 commands.unregister(agent: id)
                 hosted[id] = nil
                 order.removeAll { $0 == id }
-                if current.entry.registration.root != entry.registration.root {
-                    try? current.storage.writeState(AgentState())
+                if current.entry.registration.root != entry.registration.root { uncleared.insert(id) }
+            }
+            if uncleared.contains(id) {
+                // The stored session belongs to the old root.
+                do {
+                    try AgentStorage(agent: id, baseDirectory: storageDirectory).writeState(AgentState())
+                    uncleared.remove(id)
+                } catch {
+                    report("Sirius: \(id) not started: its session from the old folder could not be cleared: \(error.localizedDescription)")
+                    continue
                 }
             }
             guard entry.registration.isEnabled else { continue }
