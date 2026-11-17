@@ -1,4 +1,5 @@
 import AppKit
+import SiriusCore
 
 // A debug path for reviewing the composer's growth, scrolling and fades
 // without opening it on screen: `Sirius --composer-snapshots <dir>` renders
@@ -37,7 +38,18 @@ enum ComposerSnapshots {
             ("7-context-long", "Reply to these.", nil,
              context("Quarterly planning and budget review for the whole team.numbers", "3 selected")),
         ]
-        for shot in shots {
+        // A browser a helper answers for: no favicon of its own, so the
+        // logo it keeps in its bundle (AmbientFavicon.known), when installed.
+        let chrome = URL(fileURLWithPath: "/Applications/Google Chrome.app")
+        var all = shots
+        if FileManager.default.fileExists(atPath: chrome.path) {
+            all.append(("8-context-chrome", "Summarize this page.", nil, ContextLine.Model(
+                subject: "Ambient Context Protocol", selection: "42 words", app: "Google Chrome",
+                icon: NSWorkspace.shared.icon(forFile: chrome.path),
+                favicon: AmbientFavicon.data(inBundle: chrome, bundleID: "com.google.Chrome")
+            )))
+        }
+        for shot in all {
             let panel = ComposerPanel()
             panel.setAgent(name: "Claude", mark: AgentMarks.mark(agent: "claude"))
             panel.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))

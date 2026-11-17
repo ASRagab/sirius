@@ -453,20 +453,48 @@ public enum AmbientFavicon {
     public static let maxBytes = 256 * 1024
     public static let names = ["favicon.svg", "favicon.png"]
 
-    // The favicon's bytes for the app at `bundle`, or nil.
-    public static func data(inBundle bundle: URL) -> Data? {
+    // Where a few well-known apps that ship no favicon keep a picture of
+    // themselves made for small sizes, inside their own bundle: by bundle
+    // id, a path from the bundle's root. Sirius ships no other app's logo;
+    // it reads the one the app installed. Looked at only when the app has
+    // no favicon of its own.
+    public static let known: [String: String] = {
+        // Chrome's own logo without the Dock icon's white tile, 32 px.
+        let chrome = "Contents/Frameworks/Google Chrome Framework.framework/Resources/product_logo_32.png"
+        return [
+            "com.google.Chrome": chrome,
+            "com.google.Chrome.beta": chrome,
+            "com.google.Chrome.dev": chrome,
+            "com.google.Chrome.canary": chrome,
+        ]
+    }()
+
+    // The favicon's bytes for the app at `bundle`, or nil: the app's own
+    // favicon file, else the picture a well-known app keeps (`known`).
+    public static func data(inBundle bundle: URL, bundleID: String? = nil) -> Data? {
         let resources = bundle.appendingPathComponent("Contents/Resources", isDirectory: true)
         for name in names {
-            let file = resources.appendingPathComponent(name)
-            // A link out of the bundle is not the app's own file.
-            guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
-                  values.isRegularFile == true, values.isSymbolicLink != true,
-                  let size = values.fileSize, size > 0, size <= maxBytes,
-                  let data = try? Data(contentsOf: file), data.count <= maxBytes, looksRight(data, name: name)
-            else { continue }
-            return data
+            if let data = file(resources.appendingPathComponent(name), in: bundle) { return data }
         }
+        if let bundleID, let path = known[bundleID] { return file(bundle.appendingPathComponent(path), in: bundle) }
         return nil
+    }
+
+    // A file's bytes when it is a plain file of a sane size, is what its
+    // name says, and is inside `bundle` once every link on the way to it
+    // is followed. A link out of the bundle is not the app's own file.
+    private static func file(_ file: URL, in bundle: URL) -> Data? {
+        guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+              values.isRegularFile == true, values.isSymbolicLink != true,
+              let size = values.fileSize, size > 0, size <= maxBytes
+        else { return nil }
+        let real = file.resolvingSymlinksInPath().standardizedFileURL.path
+        let root = bundle.resolvingSymlinksInPath().standardizedFileURL.path
+        guard real.hasPrefix(root.hasSuffix("/") ? root : root + "/"),
+              let data = try? Data(contentsOf: file), data.count <= maxBytes,
+              looksRight(data, name: file.lastPathComponent)
+        else { return nil }
+        return data
     }
 
     private static func looksRight(_ data: Data, name: String) -> Bool {

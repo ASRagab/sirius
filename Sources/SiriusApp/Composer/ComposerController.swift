@@ -245,7 +245,7 @@ final class ComposerController {
         let pid = front.processIdentifier
         contextSource = (pid, bundleID)
         contextIcon = front.icon
-        contextFavicon = front.bundleURL.flatMap(AmbientFavicon.data(inBundle:))
+        contextFavicon = front.bundleURL.flatMap { AmbientFavicon.data(inBundle: $0, bundleID: bundleID) }
         let read = readContext
         Task { [weak self] in
             let answer = await read(pid, bundleID)

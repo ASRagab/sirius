@@ -412,6 +412,41 @@ final class AmbientTreeTests: XCTestCase {
         XCTAssertNil(AmbientFavicon.data(inBundle: app))
     }
 
+    // A well-known app with no favicon: the picture it keeps of itself in
+    // its own bundle, behind the framework's own link, and never one a
+    // link takes out of the bundle.
+    func testAKnownAppsOwnPictureStandsInForAFavicon() throws {
+        let files = FileManager.default
+        let app = files.temporaryDirectory.appendingPathComponent("chrome-\(UUID().uuidString).app")
+        let framework = app.appendingPathComponent("Contents/Frameworks/Google Chrome Framework.framework")
+        let version = framework.appendingPathComponent("Versions/1.0/Resources")
+        try files.createDirectory(at: version, withIntermediateDirectories: true)
+        try files.createDirectory(at: app.appendingPathComponent("Contents/Resources"), withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: app) }
+        try files.createSymbolicLink(atPath: framework.appendingPathComponent("Resources").path,
+                                     withDestinationPath: "Versions/1.0/Resources")
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2])
+        try png.write(to: version.appendingPathComponent("product_logo_32.png"))
+
+        XCTAssertEqual(AmbientFavicon.data(inBundle: app, bundleID: "com.google.Chrome"), png)
+        XCTAssertNil(AmbientFavicon.data(inBundle: app, bundleID: "org.example.editor"))
+        XCTAssertNil(AmbientFavicon.data(inBundle: app))
+        // The app's own favicon comes first.
+        let svg = Data("<svg xmlns=\"http://www.w3.org/2000/svg\"/>".utf8)
+        try svg.write(to: app.appendingPathComponent("Contents/Resources/favicon.svg"))
+        XCTAssertEqual(AmbientFavicon.data(inBundle: app, bundleID: "com.google.Chrome"), svg)
+        try files.removeItem(at: app.appendingPathComponent("Contents/Resources/favicon.svg"))
+
+        // The framework's link pointed outside the bundle.
+        let outside = files.temporaryDirectory.appendingPathComponent("outside-\(UUID().uuidString)")
+        try files.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: outside) }
+        try png.write(to: outside.appendingPathComponent("product_logo_32.png"))
+        try files.removeItem(at: framework.appendingPathComponent("Resources"))
+        try files.createSymbolicLink(at: framework.appendingPathComponent("Resources"), withDestinationURL: outside)
+        XCTAssertNil(AmbientFavicon.data(inBundle: app, bundleID: "com.google.Chrome"))
+    }
+
     func testAMessageWithATreeSurvivesTheLog() throws {
         let sent = message(try snapshot().messageContext(anchors: AmbientAnchors()))
         let back = try JSONDecoder().decode(Message.self, from: JSONEncoder().encode(sent))
