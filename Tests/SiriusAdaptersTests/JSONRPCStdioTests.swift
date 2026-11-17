@@ -5,7 +5,9 @@ import XCTest
 
 final class JSONRPCStdioTests: XCTestCase {
     // A child that writes more than a pipe holds before it reads anything,
-    // then answers each request with "ok".
+    // then answers each line it reads with "ok" for request 1, the only one
+    // the test sends. It does not look for the id in the line: the keys of a
+    // frame come in no fixed order, so the id can sit after a long payload.
     private static let floodThenAnswer = #"""
     pad=$(printf '%01000d' 0)
     i=0
@@ -14,8 +16,7 @@ final class JSONRPCStdioTests: XCTestCase {
       i=$((i+1))
     done
     while IFS= read -r line; do
-      id=$(printf '%s' "$line" | cut -c1-200 | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-      [ -n "$id" ] && printf '{"jsonrpc":"2.0","id":%s,"result":"ok"}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":1,"result":"ok"}\n'
     done
     """#
 
