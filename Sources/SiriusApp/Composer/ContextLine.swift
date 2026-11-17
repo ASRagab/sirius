@@ -107,7 +107,7 @@ final class ContextLine: NSView {
             icon.image = model.icon.map(Self.grey)
             icon.alphaValue = 0.75
         }
-        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.font = .systemFont(ofSize: 12)
         // What is open reads as text; what is selected in it is secondary.
         label.textColor = Palette.text
         label.stringValue = model.subject
