@@ -18,7 +18,16 @@ import Foundation
 // line, so a user changes a number without touching the wording. Each {{NAME}} in the prompt
 // is replaced by its value when the agent starts; a name consts.md lacks
 // stays as written. consts.md is seeded like instructions.md, on its own.
+//
+// A rule that must read the same for every agent is not in the seeded text,
+// where each agent's copy would go stale: it is in a file in ~/.agents
+// beside the registry folder that the template includes with @ (toasts.md).
+// That file is the app's, not the user's: refreshShared rewrites it from
+// the app's template whenever the two differ.
 public enum Instructions {
+    // The files in ~/.agents the app owns and keeps equal to its templates.
+    public static let shared = ["toasts.md"]
+
     public static let entrypoint = "instructions.md"
     // What a Codex agent's worker agents are given (seed).
     public static let workers = "workers.md"
@@ -33,11 +42,25 @@ public enum Instructions {
         guard let text = read(url) else { throw CocoaError(.fileReadInapplicableStringEncoding) }
         var seen: Set<String> = [url.standardizedFileURL.path]
         var parts = [stripComments(text)]
-        include(refs(in: text, relativeTo: url.deletingLastPathComponent()), depth: 1, seen: &seen, into: &parts)
+        var files: [URL] = []
+        include(refs(in: text, relativeTo: url.deletingLastPathComponent()), depth: 1, seen: &seen, into: &parts,
+                files: &files)
         let prompt = parts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }.joined(separator: "\n\n")
         let values = read(url.deletingLastPathComponent().appendingPathComponent(consts)).map(parseConsts) ?? [:]
         return fill(prompt) { values[$0] }
+    }
+
+    // The files compose adds to the entrypoint at `url`, in order: each @path
+    // it follows, however deep. Empty when the entrypoint is absent.
+    public static func included(entrypoint url: URL) -> [URL] {
+        guard let text = read(url) else { return [] }
+        var seen: Set<String> = [url.standardizedFileURL.path]
+        var parts: [String] = []
+        var files: [URL] = []
+        include(refs(in: text, relativeTo: url.deletingLastPathComponent()), depth: 1, seen: &seen, into: &parts,
+                files: &files)
+        return files
     }
 
     // `NAME: value` (or `NAME = value`) lines, a leading `- ` allowed;
@@ -70,15 +93,17 @@ public enum Instructions {
         return result + rest
     }
 
-    private static func include(_ urls: [URL], depth: Int, seen: inout Set<String>, into parts: inout [String]) {
+    private static func include(_ urls: [URL], depth: Int, seen: inout Set<String>, into parts: inout [String],
+                                files: inout [URL]) {
         guard depth <= maxDepth else { return }
         for url in urls {
             let path = url.standardizedFileURL.path
             guard !seen.contains(path), let text = read(url) else { continue }
             seen.insert(path)
             parts.append(stripComments(text))
+            files.append(url)
             include(refs(in: text, relativeTo: url.deletingLastPathComponent()), depth: depth + 1,
-                    seen: &seen, into: &parts)
+                    seen: &seen, into: &parts, files: &files)
         }
     }
 
@@ -162,6 +187,24 @@ public enum Instructions {
         if !FileManager.default.fileExists(atPath: constsTarget.path),
            let text = read(shared.appendingPathComponent(consts)) {
             try text.write(to: constsTarget, atomically: true, encoding: .utf8)
+            wrote = true
+        }
+        return wrote
+    }
+
+    // Makes each shared file in `folder` (~/.agents) equal to the template of
+    // the same name in `templates`, writing only when it is missing or
+    // differs. Unlike seed, it overwrites: these files are the app's, so an
+    // update's wording reaches every agent. A template that can't be read
+    // leaves the file as it is. Returns whether it wrote.
+    @discardableResult
+    public static func refreshShared(into folder: URL, templates: URL) throws -> Bool {
+        var wrote = false
+        for name in shared {
+            let target = folder.appendingPathComponent(name)
+            guard let text = read(templates.appendingPathComponent(name)), read(target) != text else { continue }
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try text.write(to: target, atomically: true, encoding: .utf8)
             wrote = true
         }
         return wrote

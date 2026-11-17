@@ -11,13 +11,24 @@ import UniformTypeIdentifiers
 //
 // The composer's seam is agents() and send(text:attachments:to:). The app
 // calls stopAll() on quit so no agent outlives Sirius.
+//
+// It also runs the asides (AsideSession): openAside forks an agent's
+// session into one, closeAside ends it, files what was said under the
+// agent's asides/ and leaves the agent a note of where (AsidePrompts
+// .closedNote), which goes with the user's next message to it.
+//
+// It also keeps working memory in check (WorkingMemory): it seeds WMEM.md
+// and gc.md beside the registry folder, and when WMEM.md is over the limit,
+// at start and whenever the file changes, it sends a cleanup turn from
+// Sirius itself to one agent whose instructions include it: the first by
+// id, so one agent does it however many share the file.
 public actor AgentHost {
     // What the factory gets to build one agent's adapter.
     public struct AdapterContext: Sendable {
         public var registration: AgentRegistration
         // The agent's SIRIUS_SOCKET.
         public var socketPath: String
-        // Holds sirius and sirius-mcp.
+        // Holds sirius, sirius-mcp and wmem.
         public var helpersDirectory: URL
         // The agent's instructions.md with what it includes (Instructions).
         public var instructions: String?
@@ -27,6 +38,8 @@ public actor AgentHost {
         // `instructions` already carry the first-turn instruction, and
         // Claude's process goes without the agent's session name.
         public var firstTurn = false
+        // An aside's session (openAside): see AsideOptions.
+        public var aside: AsideOptions? = nil
     }
 
     public typealias AdapterFactory = @Sendable (AdapterContext) -> any Adapter
@@ -61,6 +74,17 @@ public actor AgentHost {
     private var hosted: [String: Hosted] = [:]
     private var started = false
     private var stopped = false
+    private var memoryTrigger = WorkingMemoryTrigger()
+    private var memoryWatcher: FileWatcher?
+
+    private struct OpenAside {
+        var session: AsideSession
+        // What opened it, as the note to the agent names it.
+        var topic: String
+    }
+
+    // By the aside's id.
+    private var asides: [String: OpenAside] = [:]
 
     // `commands` must be the queue `server` was created with, so commands
     // arriving on the agents' sockets are logged.
@@ -118,32 +142,60 @@ public actor AgentHost {
         bundle.bundleURL.appendingPathComponent("Contents/Resources/agent", isDirectory: true)
     }
 
-    // The registry, after seeding the instructions of any agent without them.
+    // ~/.agents, the registry folder's parent: WMEM.md, gc.md and the shared
+    // rules (toasts.md) live here.
+    var agentsDirectory: URL { registry.directory.deletingLastPathComponent() }
+
+    // The registry, after seeding the instructions of any agent without them,
+    // and, once there is an agent, working memory and the shared rules the
+    // instructions include. The registry is read again when anything was
+    // written, so the instructions carry it.
     private func scanRegistry() -> RegistryScan {
         let scan = registry.loadAll()
-        guard registry.seedInstructions(for: scan.agents, templates: templatesDirectory, report: report) else {
-            return scan
+        var wrote = false
+        if !scan.agents.isEmpty {
+            do {
+                if try WorkingMemory.seed(into: agentsDirectory, templates: templatesDirectory) { wrote = true }
+            } catch {
+                report("Sirius: couldn't write working memory's templates: \(error)")
+            }
+            do {
+                if try Instructions.refreshShared(into: agentsDirectory, templates: templatesDirectory) {
+                    wrote = true
+                }
+            } catch {
+                report("Sirius: couldn't write the shared instructions: \(error)")
+            }
         }
-        return registry.loadAll()
+        if registry.seedInstructions(for: scan.agents, templates: templatesDirectory, report: report) {
+            wrote = true
+        }
+        return wrote ? registry.loadAll() : scan
     }
 
-    // ClaudeAdapter for claude-code, CodexAdapter for codex.
+    // ClaudeAdapter for claude-code, CodexAdapter for codex, MuseAdapter for
+    // muse-code. Muse has no worker instructions: its subagents get the
+    // developer prompt of the host.
     public static func makeDefaultAdapter(_ context: AdapterContext) -> any Adapter {
         switch context.registration.harness {
         case .claudeCode:
             ClaudeAdapter(registration: context.registration, socketPath: context.socketPath,
                           helpersDirectory: context.helpersDirectory, systemPrompt: context.instructions,
-                          named: !context.firstTurn)
+                          named: !context.firstTurn, aside: context.aside)
         case .codex:
             CodexAdapter(registration: context.registration, socketPath: context.socketPath,
                          helpersDirectory: context.helpersDirectory, instructions: context.instructions,
-                         workerInstructions: context.workerInstructions)
+                         workerInstructions: context.workerInstructions, aside: context.aside)
+        case .museCode:
+            MuseAdapter(registration: context.registration, socketPath: context.socketPath,
+                        helpersDirectory: context.helpersDirectory, instructions: context.instructions,
+                        aside: context.aside)
         }
     }
 
     // MARK: Lifecycle
 
-    // Loads the registry, sets up every valid agent, then starts them all
+    // Loads the registry, sets up every valid agent that is on, then starts them all
     // warm in parallel and returns when every warm start has finished. Sends
     // are accepted as soon as an agent is set up, while it warms. Registry
     // and setup failures are reported and skipped, never fatal. Runs once.
@@ -154,17 +206,20 @@ public actor AgentHost {
         for failure in scan.failures {
             report("Sirius: registry folder \(failure.folder) skipped: \(failure.error)")
         }
-        for entry in scan.agents {
+        for entry in scan.agents where entry.registration.isEnabled {
             setUp(entry)
         }
         await warm(order)
+        watchWorkingMemory()
+        await checkWorkingMemory()
     }
 
     // After setup has written the registry: starts the host if it has
     // not started, else sets up agents that are new and restarts those whose
     // registration changed, each warm. A changed root also starts a new
-    // session, since the old one belongs to the old folder. Agents that are
-    // unchanged keep running; a removed folder leaves its agent as it is.
+    // session, since the old one belongs to the old folder. An agent turned
+    // off is stopped and taken out; one turned on starts warm. Agents that
+    // are unchanged keep running; a removed folder leaves its agent as it is.
     public func reload() async {
         guard !stopped else { return }
         guard started else { return await start() }
@@ -186,11 +241,13 @@ public actor AgentHost {
                     try? current.storage.writeState(AgentState())
                 }
             }
+            guard entry.registration.isEnabled else { continue }
             setUp(entry)
             if hosted[id] != nil { changed.append(id) }
         }
         order.sort()
         await warm(changed)
+        await checkWorkingMemory()
     }
 
     // Starts the given agents warm in parallel; returns when all have finished.
@@ -230,6 +287,9 @@ public actor AgentHost {
     // "dev" socket and the server stay.
     public func stopAll() async {
         stopped = true
+        for id in Array(asides.keys) { await closeAside(id) }
+        memoryWatcher?.stop()
+        memoryWatcher = nil
         let all = order.compactMap { id in hosted[id].map { (id, $0.queue) } }
         await withTaskGroup(of: Void.self) { group in
             for (_, queue) in all {
@@ -276,15 +336,63 @@ public actor AgentHost {
                 instructions: entry.instructions, workerInstructions: entry.workerInstructions)
             let alert = alert, name = registration.name, problem = problem, report = report
             let queue = AgentTurnQueue(adapter: makeAdapter(context), log: log, storage: storage,
+                                       consolidation: ConsolidationPolicy(registration: registration),
                                        onFailure: { alert(name, Self.alertText(failed: $0)) },
                                        onUserError: {
                                            report("Sirius: \(id): \($0)")
                                            problem(id, $0)
                                        })
+            commands.register(queue, for: id)
             hosted[id] = Hosted(entry: entry, storage: storage, queue: queue, state: .starting)
             order.append(id)
         } catch {
             report("Sirius: \(id) skipped: \(error)")
+        }
+    }
+
+    // MARK: Working memory
+
+    private func watchWorkingMemory() {
+        guard memoryWatcher == nil else { return }
+        let watcher = FileWatcher(file: agentsDirectory.appendingPathComponent(WorkingMemory.file)) { [weak self] in
+            Task { await self?.checkWorkingMemory() }
+        }
+        watcher.start()
+        memoryWatcher = watcher
+    }
+
+    // Sends the cleanup turn when WMEM.md is over the limit of the agent
+    // that keeps it (WorkingMemoryTrigger says whether this crossing has had
+    // one). Returns that agent when it sent.
+    @discardableResult
+    func checkWorkingMemory() async -> String? {
+        guard !stopped else { return nil }
+        let memory = agentsDirectory.appendingPathComponent(WorkingMemory.file)
+        let text = (try? String(contentsOf: memory, encoding: .utf8)) ?? ""
+        guard let id = order.first(where: { id in
+            hosted[id].map { WorkingMemory.isIncluded(memory, agentFolder: $0.entry.directory) } ?? false
+        }), let agent = hosted[id] else { return nil }
+        let tokens = WorkingMemory.tokens(text)
+        let limit = WorkingMemory.limit(agentFolder: agent.entry.directory)
+        guard memoryTrigger.shouldAsk(tokens: tokens, limit: limit, cleaned: WorkingMemory.cleaned(text)) else {
+            return nil
+        }
+        guard let cleanup = WorkingMemory.cleanupText(agentFolder: agent.entry.directory, agents: agentsDirectory,
+                                                      templates: templatesDirectory) else {
+            report("Sirius: \(id): working memory is over its limit, but there is no \(WorkingMemory.cleanup) to send")
+            return nil
+        }
+        let message = Message(id: MessageID.make(), agent: id,
+                              text: WorkingMemory.prompt(memory: memory, tokens: tokens, limit: limit,
+                                                         cleanup: cleanup),
+                              fromSirius: true)
+        do {
+            try await agent.queue.send(message)
+            report("Sirius: \(id): working memory at ~\(tokens) tokens, over \(limit); asked it to clean up")
+            return id
+        } catch {
+            report("Sirius: \(id): couldn't ask it to clean up working memory: \(error)")
+            return nil
         }
     }
 
@@ -315,14 +423,17 @@ public actor AgentHost {
             guard let hosted = hosted[id] else { return nil }
             let registration = hosted.entry.registration
             return AgentSummary(agent: id, name: registration.name, harness: registration.harness,
-                                root: registration.root, state: hosted.state, fast: registration.fast == true)
+                                root: registration.root, state: hosted.state, fast: registration.isFast)
         }
     }
 
     // Copies each attachment into the agent's attachments/<message>/, logs
     // the Message and queues it for the agent's next turn. Returns the
     // message id once queued, not when the turn runs.
-    public func send(text: String, attachments: [URL], to agent: String) async throws -> String {
+    // `context` is what the app in front had open and selected, when the
+    // user sent it along (Message.Context).
+    public func send(text: String, attachments: [URL], context: Message.Context? = nil,
+                     to agent: String) async throws -> String {
         guard let hosted = hosted[agent] else { throw AgentHostError.unknownAgent(agent) }
         let id = MessageID.make()
         var copied: [Message.Attachment] = []
@@ -330,8 +441,82 @@ public actor AgentHost {
             copied.append(try hosted.storage.addAttachment(copying: source, to: id,
                                                            mimeType: Self.mimeType(of: source)))
         }
-        try await hosted.queue.send(Message(id: id, agent: agent, text: text, attachments: copied))
+        try await hosted.queue.send(Message(id: id, agent: agent, text: text, attachments: copied, context: context))
         return id
+    }
+
+    // MARK: Asides
+
+    // Opens an aside on `agent`: a fork of its session as it is now, on an
+    // adapter of its own, started at once so the first turn finds it warm.
+    // `topic` is what opened it, the user's words or the agent's brief.
+    // Nothing is sent yet; the caller sends the first turn and reads
+    // `events`.
+    public func openAside(agent: String, topic: String) throws -> AsideSession {
+        guard !stopped, let hosted = hosted[agent] else { throw AgentHostError.unknownAgent(agent) }
+        let parent = try? hosted.storage.readState().session
+        let socketPath = (try? server.socketPath(for: agent)) ?? ""
+        let registration = hosted.entry.registration
+        let helpers = helpersDirectory, makeAdapter = makeAdapter
+        let session = AsideSession(agent: agent, parent: parent) { options in
+            makeAdapter(AdapterContext(registration: registration, socketPath: socketPath,
+                                       helpersDirectory: helpers, instructions: nil, aside: options))
+        }
+        asides[session.id] = OpenAside(session: session, topic: topic)
+        report("Sirius: \(agent): aside \(session.id) opened" + (parent == nil ? " (no session to fork)" : ""))
+        Task { await session.warm() }
+        return session
+    }
+
+    // The aside's next turn: `text` as the user typed it, each attachment
+    // copied into the agent's attachments/ first, as send does. Returns
+    // once queued; the answer comes on the aside's `events`.
+    public func sendAside(_ id: String, text: String, attachments: [URL] = [],
+                          context: Message.Context? = nil) async throws {
+        guard let aside = asides[id], let hosted = hosted[aside.session.agent] else {
+            throw AgentHostError.unknownAgent(id)
+        }
+        let folder = MessageID.make()
+        var copied: [Message.Attachment] = []
+        for source in attachments {
+            copied.append(try hosted.storage.addAttachment(copying: source, to: folder,
+                                                           mimeType: Self.mimeType(of: source)))
+        }
+        await aside.session.send(text, attachments: copied, context: context)
+    }
+
+    // How many asides are open.
+    public var asideCount: Int { asides.count }
+
+    // Ends the aside. When the agent said anything in it, what was said is
+    // written to the agent's asides/<id>.md and the agent is left a note
+    // pointing there, for the user's next message to it.
+    public func closeAside(_ id: String) async {
+        guard let aside = asides.removeValue(forKey: id) else { return }
+        await aside.session.close()
+        let transcript = await aside.session.transcript
+        let agent = aside.session.agent
+        report("Sirius: \(agent): aside \(id) closed after \(transcript.count) turn(s)")
+        guard transcript.contains(where: { $0.role == .agent }), let hosted = hosted[agent] else { return }
+        let file = try? Self.writeTranscript(transcript, id: id, topic: aside.topic, to: hosted.storage)
+        let exchanges = transcript.filter { $0.role == .user }.count
+        await hosted.queue.note(AsidePrompts.closedNote(topic: AsidePrompts.topic(of: aside.topic),
+                                                        turns: exchanges, transcript: file?.path))
+    }
+
+    // The aside as Markdown, in the agent's asides/ folder.
+    static func writeTranscript(_ transcript: [AsideSession.Turn], id: String, topic: String,
+                                to storage: AgentStorage) throws -> URL {
+        let folder = storage.directory.appendingPathComponent("asides", isDirectory: true)
+        try storage.prepare()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var lines = ["# Aside: \(AsidePrompts.topic(of: topic))", ""]
+        for turn in transcript {
+            lines += [turn.role == .user ? "## User" : "## Agent", "", turn.text, ""]
+        }
+        let url = folder.appendingPathComponent("\(id).md")
+        try Data(lines.joined(separator: "\n").utf8).write(to: url, options: .atomic)
+        return url
     }
 
     // MARK: The first turn
@@ -368,15 +553,15 @@ public actor AgentHost {
         let report = report
         Task {
             do {
-                _ = try await adapter.start(session: nil)
-                let end = try await adapter.deliver(message)
+                _ = try await adapter.open(SessionRequest())
+                let end = try await adapter.prompt(message)
                 if case .failed(let reason) = end.outcome {
                     report("Sirius: \(agent): the first turn failed: \(reason)")
                 }
             } catch {
                 report("Sirius: \(agent): the first turn did not run: \(error)")
             }
-            await adapter.stop()
+            await adapter.close()
         }
         return message.id
     }

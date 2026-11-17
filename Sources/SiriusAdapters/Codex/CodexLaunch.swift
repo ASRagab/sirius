@@ -25,8 +25,8 @@ enum CodexLaunch {
         return nil
     }
 
-    // The three sirius-mcp tools. Each needs approval_mode "approve", or under
-    // approvalPolicy never its call fails at once.
+    // The three sirius-mcp tools. Each needs approval_mode "approve", or its
+    // call waits on an approval or fails at once.
     static let tools = ["display", "notify", "speak"]
 
     // `codex app-server` with sirius-mcp as the MCP server "sirius". MCP
@@ -37,9 +37,23 @@ enum CodexLaunch {
     // (sandbox_workspace_write.network_access): if Claude gets network
     // access, Codex does too. Set on the process,
     // so the worker agents it starts get it too.
+    // Escalations go to Codex's auto reviewer (approvals_reviewer
+    // auto_review, with approvalPolicy on-request on the thread): the
+    // sandbox blocks Calendar, Reminders, Contacts, Apple Events and opening
+    // apps, and a command it blocks is re-run outside it when the reviewer
+    // model approves, without a person, as Claude's auto mode does. Checked
+    // on 0.159.1 under app-server: the reviewer decides inside Codex, and no
+    // approval request reaches Sirius. Set on the process, so worker agents
+    // get it too.
     // Fast is Codex's "priority" service tier, its "Fast" (checked on
     // 0.159.1 with gpt-6.1-sol: accepted, where an unknown tier is reported
-    // and dropped).
+    // and dropped). Off passes "default", the API's standard tier, so a
+    // global service_tier = "priority" in ~/.codex/config.toml can't turn
+    // it back on. Checked on 0.159.1 without a turn: with that
+    // global set, thread/start reports serviceTier "priority" with no flag
+    // and "default" with this one. "default" is not among the models'
+    // advertised tiers (only "priority" is), so Codex leaves it out of its
+    // requests, which then run at standard.
     //
     // Worker agents (checked on 0.159.1): Codex adds
     // a developer message to every turn that cancels any instruction to
@@ -54,18 +68,25 @@ enum CodexLaunch {
     // (CodexCapabilities): the agent then does its work itself.
     static let delegationHint = "Start and use worker agents as your developer instructions describe."
 
+    // `aside` leaves out the sirius MCP server: an aside's own words are
+    // its reply, and it has no other way to the user.
     static func arguments(mcpHelper: String, socketPath: String, fast: Bool = false,
-                          workers: String? = nil, capabilities: CodexCapabilities = .unknown) -> [String] {
-        var config = [
-            "mcp_servers.sirius.command=\(toml(mcpHelper))",
-            "mcp_servers.sirius.args=[]",
-            "mcp_servers.sirius.env={\(SiriusEnvironment.socket)=\(toml(socketPath))}",
-        ]
-        for tool in tools {
-            config.append("mcp_servers.sirius.tools.\(tool).approval_mode=\"approve\"")
+                          workers: String? = nil, aside: Bool = false,
+                          capabilities: CodexCapabilities = .unknown) -> [String] {
+        var config: [String] = []
+        if !aside {
+            config += [
+                "mcp_servers.sirius.command=\(toml(mcpHelper))",
+                "mcp_servers.sirius.args=[]",
+                "mcp_servers.sirius.env={\(SiriusEnvironment.socket)=\(toml(socketPath))}",
+            ]
+            for tool in tools {
+                config.append("mcp_servers.sirius.tools.\(tool).approval_mode=\"approve\"")
+            }
         }
         config.append("sandbox_workspace_write.network_access=true")
-        if fast { config.append("service_tier=\"priority\"") }
+        config.append("approvals_reviewer=\"auto_review\"")
+        config.append(fast ? "service_tier=\"priority\"" : "service_tier=\"default\"")
         if capabilities.supportsMultiAgentSettings {
             config.append("features.multi_agent_v2.multi_agent_mode_hint_text=\(toml(delegationHint))")
             if let workers {

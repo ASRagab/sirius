@@ -4,7 +4,7 @@ import SiriusCore
 
 // The speech model dictation uses: whisper-base.en unless
 // UserDefaults' `dictation.model` names another in ParrotCore's registry
-// (Sirius keeps its own setting, beside `composer.lastAgent`, not read from
+// (Sirius keeps its own setting, beside `composer.last_agent`, not read from
 // Parrot's settings.json). The weights
 // live in Parrot's folder (Paths.appSupport), so a Parrot user downloads
 // nothing new (dictation.md §2).

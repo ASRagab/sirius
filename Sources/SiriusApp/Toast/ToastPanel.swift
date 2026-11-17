@@ -9,7 +9,7 @@ import AppKit
 // agent has none (dev).
 // The capsule grows with the text up to four lines, the banner's limit; past
 // that the last line ends in an ellipsis. The agents are told to keep under
-// 240 characters (packaging/agent/instructions.md), which fits.
+// 140 characters (packaging/agent/toasts.md), which fits.
 // Motion follows the reference ack bubble's: it springs open and shut as
 // the composer does (SpatialMotion), and a toast arriving while one shows
 // swaps in place: the old line blurs, fades and drops in 150 ms, a 70 ms
@@ -18,7 +18,7 @@ import AppKit
 // TODO(copy): the colour effect, the final metrics, and whether to show
 // how many toasts are waiting (the "+N more" line went with the agent line).
 @MainActor
-final class ToastPanel: NSPanel {
+final class ToastPanel: NSPanel, ToastSurface {
     // The × or a swipe up dismisses.
     var onClick: (() -> Void)?
     // The pointer resting on the toast holds it.
@@ -65,9 +65,12 @@ final class ToastPanel: NSPanel {
     // lifts over its composer: its bottom 12 above the composer's top,
     // easing up and back down on the in curve over 310 ms.
     private static let clearance: CGFloat = 12
-    private var composerFrame: NSRect?
+    // Shared by every toast panel, so one built to replace a stranded one
+    // (ToastPresenter) still knows where an open composer or pill is.
+    private static var composerFrame: NSRect?
     // And above the dictation pill, the same way.
-    private var pillFrame: NSRect?
+    private static var pillFrame: NSRect?
+    private var observers: [NSObjectProtocol] = []
     private var bottom: CGFloat?
     private var lift: (from: CGFloat, to: CGFloat, start: CFTimeInterval)?
     private var liftLink: CADisplayLink?
@@ -118,21 +121,74 @@ final class ToastPanel: NSPanel {
         root.addSubview(background)
         root.addSubview(ring.view)
         contentView = root
-        NotificationCenter.default.addObserver(forName: .composerFrame, object: nil, queue: .main) { [weak self] note in
+        observers.append(NotificationCenter.default.addObserver(forName: .composerFrame, object: nil, queue: .main) { [weak self] note in
             let frame = (note.object as? NSValue)?.rectValue
             MainActor.assumeIsolated { self?.avoid(frame) }
-        }
-        NotificationCenter.default.addObserver(forName: .dictationPillFrame, object: nil, queue: .main) { [weak self] note in
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: .dictationPillFrame, object: nil, queue: .main) { [weak self] note in
             let frame = (note.object as? NSValue)?.rectValue
             MainActor.assumeIsolated { self?.avoid(frame, pill: true) }
-        }
+        })
+    }
+
+    // Takes the panel off the screen for good, when ToastPresenter replaces it.
+    func retire() {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
+        closing?.invalidate()
+        closing = nil
+        swapping?.cancel()
+        swapping = nil
+        hideClose?.cancel()
+        close.hide(animated: false)
+        stopResize()
+        liftLink?.invalidate()
+        liftLink = nil
+        orderOut(nil)
+    }
+
+    // Ordered in, yet on no Space the user is looking at. After a display
+    // sleep, WindowServer has left a panel built before it on no Space at
+    // all: AppKit orders it in and out, every toast exits 0, and nothing
+    // shows (2026.10.21). A panel built after the wake joins every Space.
+    var isStranded: Bool { isVisible && !isOnActiveSpace }
+
+    // Whether WindowServer has the window on screen now. AppKit can report a
+    // panel visible and on the active Space while WindowServer shows it on
+    // none: every toast then exits 0 and is resized and ordered in unseen,
+    // with no rebuild logged (2026.11.15). WindowServer settles shortly
+    // after an order-in, so the presenter asks this a moment later, not at
+    // once. Bounds and on-screen state need no screen-recording grant.
+    // Its frame must also meet a display: one placed past every screen's
+    // edge (a stale composer or pill frame, a display gone) is ordered in
+    // and on screen to WindowServer, and still shows nothing. Only Sirius's
+    // own window is read, which asks for no Screen Recording grant.
+    var isOnScreen: Bool {
+        windowServerOnScreen && NSScreen.screens.contains { $0.frame.intersects(frame) }
+    }
+
+    private var windowServerOnScreen: Bool {
+        guard windowNumber > 0,
+              let info = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(windowNumber))
+                as? [[String: Any]],
+              let window = info.first
+        else { return false }
+        return (window[kCGWindowIsOnscreen as String] as? Bool) ?? false
+    }
+
+    // One line per toast for the log, so the next unseen toast leaves
+    // evidence: until 2026.11.15 an accepted toast logged nothing.
+    var state: String {
+        "window \(windowNumber), frame \(NSStringFromRect(frame)), visible \(isVisible), "
+            + "active Space \(isOnActiveSpace), WindowServer on screen \(windowServerOnScreen), "
+            + "screens \(NSScreen.screens.map { NSStringFromRect($0.frame) })"
     }
 
     // Moves the toast above the composer at `frame`, or back down to its
     // place over the Dock when the composer closes (nil); the dictation
     // pill's with `pill`. Each clears only its own.
     func avoid(_ frame: NSRect?, pill: Bool = false) {
-        if pill { pillFrame = frame } else { composerFrame = frame }
+        if pill { Self.pillFrame = frame } else { Self.composerFrame = frame }
         guard isVisible, closing == nil, let screen, let from = bottom else { return }
         let to = restingBottom(on: screen)
         guard abs(to - from) >= 1 else { return }
@@ -160,7 +216,7 @@ final class ToastPanel: NSPanel {
     // when either is up on this screen.
     private func restingBottom(on screen: NSScreen) -> CGFloat {
         var resting = screen.visibleFrame.minY + Self.margin
-        for frame in [composerFrame, pillFrame].compactMap({ $0 }) where screen.frame.intersects(frame) {
+        for frame in [Self.composerFrame, Self.pillFrame].compactMap({ $0 }) where screen.frame.intersects(frame) {
             resting = max(resting, frame.maxY + Self.clearance)
         }
         return resting
@@ -249,8 +305,6 @@ final class ToastPanel: NSPanel {
         if let mark, let logo = mark.copy() as? NSImage {
             // 24, down from 30, which was a touch big relative to the text.
             logo.size = NSSize(width: CapsuleView.markSize, height: CapsuleView.markSize)
-            // One light colour, as the bubble's mark, not the logo's own.
-            logo.isTemplate = true
             logo.accessibilityDescription = agent
             return logo
         }
@@ -489,7 +543,8 @@ private final class CapsuleView: NSView {
     static let font = NSFont.systemFont(ofSize: fontSize)
     static let textColor = NSColor(srgbRed: 0xE8 / 255, green: 0xE9 / 255, blue: 0xEA / 255, alpha: 1)
     static let lineHeight = (fontSize * 1.45).rounded()
-    // The Claude mark in Anthropic's Ivory, for a dark surface.
+    // The sparkle, for an agent with no logo, in Anthropic's Ivory for a
+    // dark surface; a logo draws in its own colours, as in the composer.
     static let markColor = NSColor(srgbRed: 0xFA / 255, green: 0xF9 / 255, blue: 0xF5 / 255, alpha: 1)
 
     private let glyph = NSImageView()

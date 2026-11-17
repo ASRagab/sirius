@@ -23,15 +23,10 @@ enum NightSkyPalette {
     // A filled pill, and its label.
     static let primary = hex(0xE6FAFF)
     static let onPrimary = hex(0x050506)
-    // The current step's dot, and the wordmark.
+    // The wordmark.
     static let dot = hex(0xD4DEF5)
-    static let dotOff = Color.white.opacity(0.2)
     // The Claude mark's own orange, in onboarding and Settings.
     static let claude = hex(SettingsPalette.claudeMark)
-    // The tagline under the wordmark.
-    static let tagline = hex(0xB5D1FF)
-    // The transcript in the first turn (white at 85%, as the titles).
-    static let transcript = Color.white.opacity(0.85)
 
     static func hex(_ value: UInt32) -> Color {
         SettingsPalette.color(value)
@@ -70,13 +65,17 @@ struct NightSky: View {
     var body: some View {
         Group {
             if let image = Self.image {
+                // Drawn at the frames' size and filling the window, so a
+                // window of another shape (the sheet's) crops it.
                 Image(decorative: image, scale: Self.scale)
                     .resizable()
+                    .aspectRatio(contentMode: .fill)
             } else {
                 NightSkyPalette.base
             }
         }
-        .frame(width: Self.designSize.width, height: Self.designSize.height)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

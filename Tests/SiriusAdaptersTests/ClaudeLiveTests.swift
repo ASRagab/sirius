@@ -8,6 +8,105 @@ import XCTest
 //   SIRIUS_LIVE_CLAUDE=1 swift test --filter ClaudeLiveTests
 // Shows two real toasts and spends two short model turns.
 final class ClaudeLiveTests: XCTestCase {
+    // Consolidation against the real CLI: one short turn, then /compact
+    // with the brief; the session carries on. Needs no Sirius.app.
+    //   SIRIUS_LIVE_CLAUDE=1 swift test --filter testConsolidateShrinksTheContext
+    func testConsolidateShrinksTheContext() async throws {
+        guard ProcessInfo.processInfo.environment["SIRIUS_LIVE_CLAUDE"] == "1" else {
+            throw XCTSkip("set SIRIUS_LIVE_CLAUDE=1 to run against the real claude")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("claude-live-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let registration = AgentRegistration(agent: "dev", name: "Dev", harness: .claudeCode, executable: "",
+                                             root: root.path, model: "claude-haiku-5-5")
+        let adapter = ClaudeAdapter(registration: registration, socketPath: "/nonexistent.sock",
+                                    helpersDirectory: root, named: false)
+        _ = try await adapter.open(SessionRequest())
+        let first = try await adapter.prompt(Message(id: "m_live1", agent: "dev",
+                                                      text: "Remember the word PELICAN. Reply only OK, no tools."))
+        XCTAssertEqual(first.outcome, .completed)
+        let context = await adapter.contextTokens()
+        let before = try XCTUnwrap(context)
+        let consolidation = try await adapter.compact()
+        let done = try XCTUnwrap(consolidation)
+        print("live: consolidated \(done)")
+        XCTAssertEqual(done.outcome, .completed)
+        // Claude's own count, which takes in the last reply too.
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(done.before), before)
+        XCTAssertLessThan(try XCTUnwrap(done.after), before)
+        let next = try await adapter.prompt(Message(id: "m_live2", agent: "dev", text: "Reply only OK."))
+        XCTAssertEqual(next.outcome, .completed)
+        XCTAssertEqual(next.session, first.session, "same session after the compaction")
+        await adapter.close()
+    }
+
+    // An aside against the real CLI: a fork of a session knows what the
+    // session knew, streams its answer as text, and leaves the session its
+    // own id. Needs no Sirius.app; spends three short turns.
+    //   SIRIUS_LIVE_CLAUDE=1 swift test --filter testAnAsideForksAndStreams
+    func testAnAsideForksAndStreams() async throws {
+        guard ProcessInfo.processInfo.environment["SIRIUS_LIVE_CLAUDE"] == "1" else {
+            throw XCTSkip("set SIRIUS_LIVE_CLAUDE=1 to run against the real claude")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("claude-live-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let registration = AgentRegistration(agent: "dev", name: "Dev", harness: .claudeCode, executable: "",
+                                             root: root.path, model: "claude-haiku-5-5")
+        let main = ClaudeAdapter(registration: registration, socketPath: "/nonexistent.sock",
+                                 helpersDirectory: root, named: false)
+        _ = try await main.open(SessionRequest())
+        let first = try await main.prompt(Message(id: "m_live1", agent: "dev",
+                                                   text: "Remember the word PELICAN. Reply only OK, no tools."))
+        let parent = try XCTUnwrap(first.session)
+
+        let said = AsideText()
+        let started = Date()
+        let aside = AsideSession(agent: "dev", parent: parent) { options in
+            ClaudeAdapter(registration: registration, socketPath: "/nonexistent.sock", helpersDirectory: root,
+                          named: false, aside: AsideOptions(instructions: options.instructions, onEvent: {
+                              if case .textDelta = $0, said.pieces.isEmpty {
+                                  print("live: first text after \(Date().timeIntervalSince(started)) s")
+                              }
+                              said.append($0)
+                              options.onEvent($0)
+                          }))
+        }
+        await aside.send("Which word did I ask you to remember? Answer in one short sentence.")
+        var ended: AsideSession.Event?
+        for await event in aside.events {
+            if case .turnEnded = event { ended = event; break }
+        }
+        print("live: aside said \(said.pieces.count) pieces: \(said.joined)")
+        XCTAssertEqual(ended, .turnEnded(failure: nil))
+        XCTAssertTrue(said.joined.uppercased().contains("PELICAN"), said.joined)
+        let forked = await aside.session
+        XCTAssertNotNil(forked)
+        XCTAssertNotEqual(forked, parent, "the aside has a session of its own")
+
+        // A longer answer arrives over time, not in one burst at its end.
+        let before = said.pieces.count
+        let longStarted = Date()
+        await aside.send("Write about 150 words on why the sea is salty. Plain prose, no tools.")
+        var arrivals: [TimeInterval] = []
+        for await event in aside.events {
+            if case .event(.textDelta) = event { arrivals.append(Date().timeIntervalSince(longStarted)) }
+            if case .turnEnded = event { break }
+        }
+        let spread = (arrivals.last ?? 0) - (arrivals.first ?? 0)
+        print("live: long answer in \(said.pieces.count - before) pieces, first \(arrivals.first ?? -1) s, last \(arrivals.last ?? -1) s")
+        XCTAssertGreaterThan(arrivals.count, 10)
+        XCTAssertGreaterThan(spread, 0.5, "the answer's text came in one burst")
+        await aside.close()
+
+        // The main session goes on as itself and never heard the aside.
+        let next = try await main.prompt(Message(id: "m_live2", agent: "dev", text: "Reply only OK."))
+        XCTAssertEqual(next.outcome, .completed)
+        XCTAssertEqual(next.session, parent)
+        await main.close()
+    }
+
     func testToastThenResume() async throws {
         guard ProcessInfo.processInfo.environment["SIRIUS_LIVE_CLAUDE"] == "1" else {
             throw XCTSkip("set SIRIUS_LIVE_CLAUDE=1 to run against the real claude and Sirius.app")
@@ -26,32 +125,32 @@ final class ClaudeLiveTests: XCTestCase {
                                     observer: { events.append($0) })
         print("live: helpers \(helpers.path), socket \(socket), root \(root.path)")
 
-        let started = try await adapter.start(session: nil)
+        let started = try await adapter.open(SessionRequest())
         print("live: start returned \(started)")
-        let first = try await adapter.deliver(Message(id: "m_live1", agent: "dev",
+        let first = try await adapter.prompt(Message(id: "m_live1", agent: "dev",
                                                       text: "Show me a toast saying \"T12 live check\"."))
         print("live: turn 1 \(first)")
         events.dump(label: "turn 1")
         XCTAssertEqual(first.outcome, .completed)
         let session = try XCTUnwrap(first.session)
         XCTAssertTrue(events.succeededToast(), "a Bash `sirius display toast` call succeeded")
-        await adapter.stop()
+        await adapter.close()
 
         events.clear()
-        let resumed = try await adapter.start(session: session)
+        let resumed = try await adapter.open(SessionRequest(resume: session))
         print("live: restart returned \(resumed)")
         let args = await adapter.launchArguments
         print("live: args \(args)")
         let i = try XCTUnwrap(args.firstIndex(of: "--resume"))
         XCTAssertEqual(args[i + 1], session)
-        let second = try await adapter.deliver(Message(id: "m_live2", agent: "dev",
+        let second = try await adapter.prompt(Message(id: "m_live2", agent: "dev",
                                                        text: "What did I ask you a moment ago? Reply via toast."))
         print("live: turn 2 \(second)")
         events.dump(label: "turn 2")
         XCTAssertEqual(second.outcome, .completed)
         XCTAssertEqual(second.session, session)
         XCTAssertTrue(events.succeededToast(), "the resumed turn replied via toast")
-        await adapter.stop()
+        await adapter.close()
     }
 
     private static func userTempDirectory() -> String {

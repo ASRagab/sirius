@@ -3,7 +3,7 @@ import SiriusProtocol
 
 // One agent's messages, delivered one turn at a time in the order sent
 // (architecture.md §3). A message sent while a turn runs, with none waiting
-// ahead of it, joins that turn when the adapter can steer (Adapter.steer);
+// ahead of it, joins that turn when the adapter declared steer (Adapter.steer);
 // it is filed as joining it at once and ends with the turn. It starts the agent on warm() or the first message,
 // whichever comes first, resuming the session in state.json, persists every
 // session the adapter reports, and restarts the agent before the next turn
@@ -12,6 +12,16 @@ import SiriusProtocol
 // Messages the log re-queued on open (never delivered before a restart) go
 // first, in log order, ahead of anything sent after; warm() or the first
 // send starts their delivery (#1).
+//
+// With a ConsolidationPolicy, every turn's end (its own or the agent's)
+// starts an idle timer that a send cancels. When it runs out with nothing
+// running or queued and the context at the threshold, the queue consolidates
+// the agent as a step of its own: a message sent meanwhile waits behind it
+// rather than joining it, and goes once it is done.
+//
+// A note (note()) is a line from Sirius itself that the agent should have
+// but that is not worth a turn: it goes beside the user's next message
+// (Message.notes) and is kept in state.json until a turn has taken it.
 public actor AgentTurnQueue {
     private let adapter: any Adapter
     private let log: AgentLog
@@ -21,6 +31,7 @@ public actor AgentTurnQueue {
     private let onFailure: @Sendable (String) -> Void
     // Told instead, with what to say, when the failure is a UserFacingError.
     private let onUserError: @Sendable (String) -> Void
+    private let consolidation: ConsolidationPolicy?
 
     private var pending: [Message] = []
     // The message whose turn is running, and those that joined it.
@@ -30,27 +41,77 @@ public actor AgentTurnQueue {
     private var started = false
     private var observing = false
     private var stopped = false
-    // The adapter start in flight, shared by warm() and the first turn so
+    // The adapter open in flight, shared by warm() and the first turn so
     // the agent is never started twice at once.
-    private var startup: Task<Result<AgentStart, any Error>, Never>?
+    private var startup: Task<Result<SessionInfo, any Error>, Never>?
+    // What the open adapter declared it can do; nothing until it opens.
+    private var capabilities = AgentCapabilities()
+    // The agent's context in tokens, from its last .usage update. The
+    // adapter says when it no longer knows (.usage(nil)), e.g. after it
+    // opens a session again, so open doesn't reset it here.
+    private var contextTokens: Int?
+    // Runs out after the policy's idle time; a send or the next turn's end
+    // replaces or cancels it.
+    private var idleTimer: Task<Void, Never>?
+    // Waiting for the user's next message; see the header.
+    private var notes: [String]
 
     public init(adapter: any Adapter, log: AgentLog, storage: AgentStorage,
+                consolidation: ConsolidationPolicy? = nil,
                 onFailure: @escaping @Sendable (String) -> Void = { _ in },
                 onUserError: @escaping @Sendable (String) -> Void = { _ in }) {
+        self.consolidation = consolidation
         self.adapter = adapter
         self.log = log
         self.storage = storage
         self.onFailure = onFailure
         self.onUserError = onUserError
         self.pending = log.requeued.map { Self.deliverable($0.message(agent: storage.agent)) }
+        self.notes = (try? storage.readState().notes) ?? []
+    }
+
+    // Keeps `text` for the agent, to go beside the user's next message.
+    public func note(_ text: String) {
+        notes.append(text)
+        persistNotes()
+    }
+
+    // The notes waiting, for tests and diagnostics.
+    public func pendingNotes() -> [String] {
+        notes
+    }
+
+    // The message with the notes waiting beside it. A peer's message
+    // carries none: they are for the turn the user starts.
+    private func noted(_ message: Message) -> Message {
+        guard message.peerSender == nil, !notes.isEmpty else { return message }
+        var carrying = message
+        carrying.notes = notes
+        return carrying
+    }
+
+    // The agent has taken in `message`'s notes: they stop waiting.
+    private func delivered(notesOf message: Message) {
+        guard let taken = message.notes, !taken.isEmpty else { return }
+        notes.removeFirst(min(taken.count, notes.count))
+        persistNotes()
+    }
+
+    private func persistNotes() {
+        var state = (try? storage.readState()) ?? AgentState()
+        state.notes = notes.isEmpty ? nil : notes
+        try? storage.writeState(state)
     }
 
     // Logs the message and queues it. Returns at once; the turn runs later.
     public func send(_ message: Message) async throws {
         guard !stopped else { throw AgentTurnQueueError.stopped }
+        idleTimer?.cancel()
         try await log.messageReceived(message)
-        if let turn = current, pending.isEmpty, started {
-            if await adapter.steer(message) {
+        if let turn = current, pending.isEmpty, started, capabilities.steer {
+            let carrying = noted(message)
+            if await adapter.steer(carrying) == .joined {
+                delivered(notesOf: carrying)
                 try? await log.turnJoined(message: message.id, turn: turn)
                 if current == turn {
                     joined.append(message.id)
@@ -87,13 +148,14 @@ public actor AgentTurnQueue {
     public func stop() async {
         stopped = true
         pending.removeAll()
+        idleTimer?.cancel()
         pump?.cancel()
-        await adapter.stop()
+        await adapter.close()
         await pump?.value
         // A start still in flight finishes first, then is stopped too.
         if let startup {
             _ = await startup.value
-            await adapter.stop()
+            await adapter.close()
         }
     }
 
@@ -110,6 +172,46 @@ public actor AgentTurnQueue {
             await run(pending.removeFirst())
         }
         pump = nil
+        armIdleTimer()
+    }
+
+    // MARK: Consolidation
+
+    private func armIdleTimer() {
+        idleTimer?.cancel()
+        guard let policy = consolidation, !stopped else { return }
+        idleTimer = Task { [weak self] in
+            try? await Task.sleep(for: policy.idle)
+            guard !Task.isCancelled else { return }
+            await self?.consolidateIfIdle(policy)
+        }
+    }
+
+    private func consolidateIfIdle(_ policy: ConsolidationPolicy) async {
+        guard isIdle, capabilities.compact, let tokens = contextTokens, tokens >= policy.threshold else { return }
+        pump = Task {
+            await self.consolidate()
+            await self.drain()
+        }
+    }
+
+    private var isIdle: Bool {
+        started && !stopped && pump == nil && pending.isEmpty && current == nil
+    }
+
+    private func consolidate() async {
+        do {
+            guard let done = try await adapter.compact() else { return }
+            try? await log.consolidated(done)
+        } catch is CancellationError {
+        } catch {
+            // The agent is gone, as after a failed turn: restart it before
+            // the next one. Nobody asked for this step, so nobody is told.
+            started = false
+            await adapter.close()
+            try? await log.consolidated(Consolidation(before: nil, after: nil, milliseconds: 0,
+                                                      outcome: .failed("\(error)")))
+        }
     }
 
     private func run(_ message: Message) async {
@@ -127,7 +229,9 @@ public actor AgentTurnQueue {
         current = message.id
         joined = []
         do {
-            let end = try await adapter.deliver(message)
+            let carrying = noted(message)
+            let end = try await adapter.prompt(carrying)
+            if case .completed = end.outcome { delivered(notesOf: carrying) }
             if let session = end.session { persist(session) }
             for id in finished(message) { try? await log.turnEnded(message: id, end) }
             if case .failed(let reason) = end.outcome { onFailure(reason) }
@@ -137,7 +241,7 @@ public actor AgentTurnQueue {
             // The agent is gone: restart it before the next turn.
             started = false
             let ids = finished(message)
-            await adapter.stop()
+            await adapter.close()
             for id in ids {
                 try? await log.turnEnded(message: id, session: nil, outcome: .failed(reason: "\(error)"))
             }
@@ -175,14 +279,15 @@ public actor AgentTurnQueue {
         let adapter = adapter
         if !observing {
             observing = true
-            await adapter.onAgentTurn { [weak self] end in
-                Task { await self?.agentTurnEnded(end) }
+            let updates = adapter.updates
+            Task { [weak self] in
+                for await update in updates { await self?.received(update) }
             }
         }
         let session = try? storage.readState().session
         let launched = ContinuousClock.now
-        let task = Task { () -> Result<AgentStart, any Error> in
-            do { return .success(try await adapter.start(session: session)) } catch { return .failure(error) }
+        let task = Task { () -> Result<SessionInfo, any Error> in
+            do { return .success(try await adapter.open(SessionRequest(resume: session))) } catch { return .failure(error) }
         }
         startup = task
         let result = await task.value
@@ -199,13 +304,21 @@ public actor AgentTurnQueue {
                                         model: start.model, effort: start.effort, milliseconds: milliseconds)
             if stopped {
                 // stop() ran while the agent was starting; it must not outlive it.
-                await adapter.stop()
+                await adapter.close()
                 return .failure(AgentTurnQueueError.stopped)
             }
+            capabilities = start.capabilities
             started = true
             return .success(())
         case .failure(let error):
             return .failure(error)
+        }
+    }
+
+    private func received(_ update: SessionUpdate) async {
+        switch update {
+        case .usage(let tokens): contextTokens = tokens
+        case .agentTurnEnded(let end): await agentTurnEnded(end)
         }
     }
 
@@ -215,11 +328,14 @@ public actor AgentTurnQueue {
         if let session = end.session { persist(session) }
         try? await log.agentTurn(end)
         if case .failed(let reason) = end.outcome, !stopped { onFailure(reason) }
+        if pump == nil { armIdleTimer() }
     }
 
     private func persist(_ session: String) {
-        guard (try? storage.readState().session) != session else { return }
-        try? storage.writeState(AgentState(session: session))
+        var state = (try? storage.readState()) ?? AgentState()
+        guard state.session != session else { return }
+        state.session = session
+        try? storage.writeState(state)
     }
 }
 

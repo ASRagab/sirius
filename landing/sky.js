@@ -539,8 +539,9 @@ function layout() {
 addEventListener("resize", layout);
 layout();
 
-// The intro: fade up on the sky top, hold, pan down to the water, then the title focuses in.
-const FADE = 1.6, HOLD = 1.2, PAN = 4.3, TITLE = 2.2;
+// The intro: fade up on the sky top and wait there; "Experience the magic" pans down to the water, then the
+// title focuses in.
+const FADE = 1.6, PAN = 4.3, TITLE = 2.2;
 const ease = (x) => x * x * (3 - 2 * x);
 // CSS-style cubic-bezier: a smootherstep-like start, then a long, gentle deceleration so the camera creeps in.
 const bezier = (x1, y1, x2, y2) => (x) => {
@@ -553,7 +554,8 @@ const bezier = (x1, y1, x2, y2) => (x) => {
 const panEase = bezier(0.45, 0, 0.15, 1);
 const q = new URLSearchParams(location.search);   // review: ?pan=0..1 pins the camera, ?meteor freezes one (=o an Orionid, =r a random one; &mc=0..4 its colour; &fly lets it fly)
 const pinned = q.has("pan") ? +q.get("pan") : null;
-const panAt = (e) => (pinned ?? (reduced ? 1 : panEase(Math.min(1, Math.max(0, (e - HOLD) / PAN)))));
+let go = null;   // intro time the visitor chose to continue
+const panAt = (e) => (pinned ?? (go === null ? 0 : reduced ? 1 : panEase(Math.min(1, Math.max(0, (e - go) / PAN)))));
 const camAt = (e) => L.startTop + (L.endTop - L.startTop) * panAt(e);
 
 let camTop = camAt(0);
@@ -610,6 +612,17 @@ function spawn(t) {
 }
 
 const born = performance.now() / 1000;
+const intro = document.getElementById("intro");
+if (pinned !== null) intro.remove();
+else {
+  intro.querySelector(".continue").addEventListener("click", () => {
+    if (go !== null) return;
+    go = performance.now() / 1000 - born;
+    document.body.classList.add("going");
+    va("event", { name: "continue" });
+    requestAnimationFrame(frame);   // reduced motion draws only on demand
+  });
+}
 let settled = null;   // time the camera came to rest
 function frame(now) {
   const t = now / 1000, e = t - born;

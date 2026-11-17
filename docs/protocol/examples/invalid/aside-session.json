@@ -1,5 +1,5 @@
 {
-  "description": "aside is not built",
+  "description": "session on an aside is not built",
   "frame": {
     "jsonrpc": "2.0",
     "sirius": 1,
@@ -7,11 +7,12 @@
     "method": "display",
     "params": {
       "kind": "aside",
-      "content": "hi"
+      "content": "hi",
+      "session": "s"
     }
   },
   "expect": {
-    "error": -32003,
+    "error": -32602,
     "id": "1",
     "data": {
       "kind": "aside",

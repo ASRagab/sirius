@@ -9,7 +9,7 @@ import SiriusCore
 // HoldKey.pasteModifier) and the transcript is pasted at the cursor rather
 // than sent to an agent; the pill shows a text-cursor
 // glyph for those holds. The key held can be fn, right ⌥, right ⌘ or ⌃,
-// chosen on the onboarding's last page and stored in UserDefaults
+// chosen on the onboarding sheet and stored in UserDefaults
 // (Shortcuts.holdKey); "fn" below means whichever it is.
 //
 // It never shows a system prompt: the grants are asked for only from
@@ -55,9 +55,6 @@ final class DictationService {
         }
     }
     var onStatus: ((Status) -> Void)?
-    // A dictating hold: true as it starts recording, false as it is
-    // released or cancelled. For the onboarding's guided first turn.
-    var onHold: ((Bool) -> Void)?
 
     // The pill's one line for the download and the load after it (CoreML
     // compiles the model once downloaded), from the spec.
@@ -291,7 +288,6 @@ final class DictationService {
             pill.pastes = mode == .paste
             SiriusLog.dictation.info("dictation: \(mode == .paste ? "paste" : "agent") hold")
             loop().handle(.pressed)
-            onHold?(true)
         case .paste:
             // ⌃ joined within the chord window: the recording carries on,
             // and its transcript is pasted.
@@ -304,12 +300,10 @@ final class DictationService {
             forwarding = false
             delivery.mode = mode
             controller?.handle(.released)
-            onHold?(false)
         case .cancelled:
             guard forwarding else { return }
             forwarding = false
             controller?.handle(.cancelled)
-            onHold?(false)
         }
     }
 

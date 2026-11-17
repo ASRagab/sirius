@@ -58,6 +58,19 @@ final class DictationPillTests: XCTestCase {
         assertGone(pill, "closed after the new hold's own transcript")
     }
 
+    // A closed pill is back on its mark: left on the transcribing sparkle,
+    // it would animate every frame in its hidden window until the next hold.
+    func testAClosedPillStopsBreathing() {
+        let pill = makePill()
+        pill.dictationStarted()
+        run(hold)
+        pill.dictationTranscribing()
+        pill.dictationFinished()
+        run(DictationPill.transcribingHold + DictationPill.scaleDuration + 0.2)
+        assertGone(pill, "closed after its transcript")
+        XCTAssertEqual(pill.shownState, .mark, "the hidden pill still holds the sparkle")
+    }
+
     // A pill hidden in the same turn it was shown stays hidden: the show's
     // deferred grow does not bring it back and leave it stuck.
     func testAPillHiddenAsItOpensStaysHidden() {
@@ -168,5 +181,61 @@ final class DictationPillTests: XCTestCase {
         pill.dictationFinished()
         run(DictationPill.transcribingHold + DictationPill.scaleDuration + 0.2)
         assertGone(pill, "closed at the sparkle's time")
+    }
+
+    // A panel ordered in on no Space the user is on (left so by a display
+    // sleep) is replaced at once by one that is, and the pill shows; the
+    // next hold keeps the new panel.
+    func testAStrandedPanelIsRebuiltOnOpen() {
+        let pill = makePill()
+        pill.isOnActiveSpace = { [unowned pill] _ in pill.panelsBuilt > 1 }
+        pill.dictationStarted()
+        XCTAssertEqual(pill.panelsBuilt, 2, "rebuilt when ordered in on no Space")
+        run(hold)
+        assertShowing(pill, .recording, "on the new panel")
+        pill.dictationFailed(DictationError.cancelled)
+        run(DictationPill.scaleDuration + 0.1)
+        assertGone(pill, "closed")
+        pill.dictationStarted()
+        XCTAssertEqual(pill.panelsBuilt, 2, "the new panel kept")
+        pill.dictationFailed(DictationError.cancelled)
+        run(DictationPill.scaleDuration + 0.1)
+    }
+
+    // A panel that is still on no Space after its rebuild is shown anyway,
+    // without rebuilding again and again.
+    func testAPanelStillStrandedAfterARebuildIsRebuiltOnce() {
+        let pill = makePill()
+        pill.isOnActiveSpace = { _ in false }
+        pill.dictationStarted()
+        XCTAssertEqual(pill.panelsBuilt, 2)
+        run(hold)
+        assertShowing(pill, .recording, "still shows")
+        pill.dictationFailed(DictationError.cancelled)
+        run(DictationPill.scaleDuration + 0.1)
+    }
+
+    // After the displays wake, the next open builds a new panel; a wake
+    // while the pill is up leaves its panel until it next opens.
+    func testTheFirstOpenAfterAWakeBuildsANewPanel() {
+        let pill = makePill()
+        pill.isOnActiveSpace = { _ in true }
+        pill.displaysWoke()
+        pill.dictationStarted()
+        XCTAssertEqual(pill.panelsBuilt, 2, "rebuilt after the wake")
+        run(hold)
+        pill.displaysWoke()
+        pill.dictationTranscribing()
+        run(0.05)
+        XCTAssertEqual(pill.panelsBuilt, 2, "not while it is up")
+        pill.dictationFinished()
+        run(DictationPill.transcribingHold + DictationPill.scaleDuration + 0.2)
+        assertGone(pill, "closed")
+        pill.dictationStarted()
+        XCTAssertEqual(pill.panelsBuilt, 3, "rebuilt at the next open")
+        run(hold)
+        assertShowing(pill, .recording, "on the new panel")
+        pill.dictationFailed(DictationError.cancelled)
+        run(DictationPill.scaleDuration + 0.1)
     }
 }

@@ -15,14 +15,26 @@ import SiriusProtocol
 // CLI 2.1.296). Each line we send carries a uuid that Claude echoes back
 // (--replay-user-messages) and lists in the result of the turn that took it
 // in (user_message_uuids); that result ends our turn. Any other result is
-// the agent's own turn, reported through onAgentTurn, or the empty one that
+// the agent's own turn, reported as .agentTurnEnded on `updates`, or the empty one that
 // trails it, ignored. A CLI that does not list them falls back to the echo:
 // the result after it ends our turn.
 //
 // A line written while a turn runs (steer) joins it at its next tool
 // boundary, as typing does in Claude Code; a turn with no tool call left
-// takes it as the next turn instead. deliver
+// takes it as the next turn instead. prompt
 // returns once every line it and its steers wrote has a result.
+//
+// compact sends "/compact" with the brief below as a line of its own:
+// Claude compacts in the same process and session, keeping the background
+// agents it runs, and ends it with a result like a turn's (checked on
+// 2.1.311). It is refused while a turn the agent started by itself runs.
+//
+// An aside (AsideOptions) is a second process on a fork of the agent's
+// session: --resume <session> --fork-session gives it the history under a
+// new id and leaves the agent's own process and session alone, mid-turn
+// included, and --include-partial-messages streams its answer, which goes
+// to onEvent piece by piece (checked on 2.1.321). It runs under the aside's
+// instructions, unnamed, without `sirius` on its PATH or a socket.
 public actor ClaudeAdapter: Adapter {
     // Every stdout line as Claude wrote it, for the log and for tests. Called
     // on the reader's task, in order.
@@ -38,6 +50,9 @@ public actor ClaudeAdapter: Adapter {
     private let named: Bool
     private let observer: Observer?
     private let environment: [String: String]
+    private let aside: AsideOptions?
+    // An aside's: what the turn running has said so far, as events.
+    private var events = ClaudeEvents()
 
     private var running: Running?
     private var generation = 0
@@ -48,10 +63,11 @@ public actor ClaudeAdapter: Adapter {
     private var outstanding: Set<String> = []
     private var echoed = false
     private var turnFailure: String?
-    private var agentTurnHandler: (@Sendable (TurnEnd) -> Void)?
+    public nonisolated let updates: AsyncStream<SessionUpdate>
+    private let updateSink: AsyncStream<SessionUpdate>.Continuation
     // The session the stream last named.
     private var session: String?
-    // Why the last process ended, for a deliver that finds it gone.
+    // Why the last process ended, for a prompt that finds it gone.
     private var lastExit: String?
     // The first line of its stderr when it ended before writing a line on
     // stdout: claude refused to start, e.g. "error: unknown option
@@ -62,6 +78,15 @@ public actor ClaudeAdapter: Adapter {
     private var exiting: [Int: Task<Int32?, Never>] = [:]
     // The model the stream last named.
     private var model: String?
+    // The context of the last main-thread model call, in tokens; nil until
+    // one runs after open or a compaction. Every change goes out as .usage.
+    private var context: Int? {
+        didSet { if context != oldValue { updateSink.yield(.usage(contextTokens: context)) } }
+    }
+    // Whether Claude is in a turn: from its system/init to its result.
+    private var inTurn = false
+    // The last compaction the stream reported, for compact.
+    private var compaction: Consolidation?
     // The session this process was started to resume, until a turn succeeds.
     private var resumed: String?
     // The arguments of the process last started.
@@ -85,15 +110,22 @@ public actor ClaudeAdapter: Adapter {
     public init(registration: AgentRegistration, socketPath: String, helpersDirectory: URL,
                 systemPrompt: String? = nil, named: Bool = true,
                 environment: [String: String] = ProcessInfo.processInfo.environment,
+                aside: AsideOptions? = nil,
                 observer: Observer? = nil) {
         self.registration = registration
         self.socketPath = socketPath
         self.helpersDirectory = helpersDirectory
-        self.systemPrompt = systemPrompt
-        self.named = named
+        self.systemPrompt = aside?.instructions ?? systemPrompt
+        self.named = named && aside == nil
+        self.aside = aside
         self.environment = environment
         self.observer = observer
+        (updates, updateSink) = makeUpdateStream()
     }
+
+    // Everything but open, prompt and close: Claude steers, compacts with
+    // /compact, starts turns by itself, and reports its context.
+    static let capabilities = AgentCapabilities(steer: true, compact: true, agentTurns: true, usage: true)
 
     // The name the session goes by for other Claude sessions: ListAgents
     // rows, SendMessage addresses and the `from` of cross-session messages.
@@ -109,10 +141,16 @@ public actor ClaudeAdapter: Adapter {
     // (ClaudeOrphans).
     //
     // An older CLI exits at once on a flag it doesn't know, so the optional
-    // ones its help doesn't list are left out (ClaudeCapabilities); start()
+    // ones its help doesn't list are left out (ClaudeCapabilities); open()
     // refuses a CLI that lacks a required one.
+    //
+    // `fork` resumes `session` as a copy under a new id. `aside` streams
+    // the answer and leaves out the `sirius` allowance. Both sit after
+    // --replay-user-messages, so a fork a dead Sirius left behind still
+    // reads as an orphan of the session it came from (ClaudeOrphans).
     public static func arguments(session: String?, systemPrompt: String?, name: String? = nil,
                                  model: String? = nil, effort: String? = nil, fast: Bool = false,
+                                 fork: Bool = false, aside: Bool = false,
                                  capabilities: ClaudeCapabilities = .unknown) -> [String] {
         var args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
                     "--permission-mode", "auto"]
@@ -125,6 +163,8 @@ public actor ClaudeAdapter: Adapter {
         if let name, capabilities.supports("--name") { args += ["--name", name] }
         if let session { args += ["--resume", session] }
         args += ["--replay-user-messages"]
+        if fork, session != nil { args += ["--fork-session"] }
+        if aside { args += ["--include-partial-messages"] }
         if let systemPrompt {
             args += ["--append-system-prompt", systemPrompt]
             // Snapshot off: Claude otherwise keeps the prompt a session started
@@ -132,7 +172,7 @@ public actor ClaudeAdapter: Adapter {
             // agent (CLI 2.1.296). 2.1.212 has no such flag.
             if capabilities.supports("--system-prompt-snapshot") { args += ["--system-prompt-snapshot", "off"] }
         }
-        args += ["--allowedTools", "Bash(sirius:*)"]
+        if !aside { args += ["--allowedTools", "Bash(sirius:*)"] }
         return args
     }
 
@@ -142,28 +182,40 @@ public actor ClaudeAdapter: Adapter {
     // the first turn, not at process start), so this returns nil unless the
     // stream has already named one. Likewise the model, unless one was
     // registered.
-    public func start(session resume: String?) async throws -> AgentStart {
-        await stop()
+    public func open(_ request: SessionRequest) async throws -> SessionInfo {
+        let resume = request.resume
+        let fork = request.fork && resume != nil
+        await close()
         // A claude a dead Sirius left on this session must not write it beside
-        // the new one (#2).
-        if let resume { await ClaudeOrphans.end(session: resume) }
+        // the new one (#2). A fork writes a session of its own.
+        if let resume, !fork { await ClaudeOrphans.end(session: resume) }
         guard let executable = ClaudeLocator.locate(executable: registration.executable, environment: environment)
         else { throw ClaudeAdapterError.executableNotFound(registration.executable) }
         let capabilities = await ClaudeProbe.shared.capabilities(executable: executable, environment: environment)
         let missing = capabilities.missingRequired
         guard missing.isEmpty else { throw ClaudeAdapterError.tooOld(version: capabilities.version, missing: missing) }
+        if aside != nil {
+            let lacking = (fork ? ["--fork-session"] : []) + ["--include-partial-messages"]
+            let absent = lacking.filter { !capabilities.supports($0) }
+            guard absent.isEmpty else { throw ClaudeAdapterError.tooOld(version: capabilities.version, missing: absent) }
+        }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         let arguments = Self.arguments(session: resume, systemPrompt: systemPrompt,
                                        name: named ? Self.sessionName(agent: registration.agent) : nil,
                                        model: registration.model, effort: registration.effort,
-                                       fast: registration.fast == true, capabilities: capabilities)
+                                       fast: registration.fast == true, fork: fork, aside: aside != nil,
+                                       capabilities: capabilities)
         process.arguments = arguments
         process.currentDirectoryURL = URL(fileURLWithPath: registration.root, isDirectory: true)
         var env = environment
-        env["PATH"] = helpersDirectory.path + ":" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
-        env[SiriusEnvironment.socket] = socketPath
+        if aside == nil {
+            env["PATH"] = helpersDirectory.path + ":" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
+            env[SiriusEnvironment.socket] = socketPath
+        } else {
+            env[SiriusEnvironment.socket] = nil
+        }
         process.environment = env
 
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
@@ -194,9 +246,12 @@ public actor ClaudeAdapter: Adapter {
         running = Running(process: ClaudeProcess(process), stdin: stdin.fileHandleForWriting,
                           generation: gen, stderr: tail)
         launchArguments = arguments
-        resumed = resume
+        // A fork that fails has nothing of its own to fall back from.
+        resumed = fork ? nil : resume
         session = nil
         model = nil
+        context = nil
+        inTurn = false
         lastExit = nil
         launchFailure = nil
 
@@ -234,13 +289,14 @@ public actor ClaudeAdapter: Adapter {
             }
             await self?.streamEnded(generation: gen)
         }
-        return AgentStart(session: session, model: registration.model, effort: registration.effort)
+        return SessionInfo(session: session, model: registration.model, effort: registration.effort,
+                           capabilities: Self.capabilities)
     }
 
     // A session Claude can no longer find (deleted, or from another machine)
     // would fail every restart, so the turn starts a new session instead, as
     // the Codex adapter does; the queue persists the new id.
-    public func deliver(_ message: Message) async throws -> TurnEnd {
+    public func prompt(_ message: Message) async throws -> TurnEnd {
         // Claude reports it as an error result, which a turn already waiting
         // receives as its end, then exits.
         do {
@@ -257,11 +313,41 @@ public actor ClaudeAdapter: Adapter {
     }
 
     private func deliverInNewSession(_ message: Message) async throws -> TurnEnd {
-        _ = try await start(session: nil)
+        _ = try await open(SessionRequest())
         return try await deliverOnce(message)
     }
 
     private func deliverOnce(_ message: Message) async throws -> TurnEnd {
+        let aside = aside != nil
+        return try await deliverLine { try ClaudeStream.userMessage(message, uuid: $0, aside: aside) }
+    }
+
+    // What /compact is told to keep: the conversation as a short log of
+    // pointers.
+    static let consolidationBrief = "Consolidate this conversation into a short running log of pointers. Keep each of the user's messages and what you told them through Sirius, a line each, in order, the last few verbatim. Keep standing rules and preferences the user stated, verbatim. Drop tool calls, file contents, command output and messages between agents; in their place, point to where each result lives: a file path, commit, task id or URL. List the background agents still running or idle in your pool, each with its name and job. Nothing else."
+
+    // The context as of the last model call, as `updates` last said; for
+    // tests and diagnostics.
+    public func contextTokens() -> Int? {
+        context
+    }
+
+    public func compact() async throws -> Consolidation? {
+        guard running != nil, pending == nil, !inTurn else { return nil }
+        let before = context
+        let began = ContinuousClock.now
+        compaction = nil
+        let end = try await deliverLine { try ClaudeStream.command("/compact " + Self.consolidationBrief, uuid: $0) }
+        let elapsed = ContinuousClock.now - began
+        let milliseconds = Int(elapsed.components.seconds * 1000
+            + elapsed.components.attoseconds / 1_000_000_000_000_000)
+        return Consolidation(before: compaction?.before ?? before, after: compaction?.after,
+                             milliseconds: milliseconds, outcome: end.outcome)
+    }
+
+    // Writes the line `make` builds with a fresh uuid as a turn and waits for
+    // the result that takes it in.
+    private func deliverLine(_ make: (String) throws -> Data) async throws -> TurnEnd {
         try Task.checkCancellation()
         guard let current = running else {
             if let launchFailure { throw ClaudeAdapterError.quitAtLaunch(launchFailure, lastExit ?? "") }
@@ -269,7 +355,7 @@ public actor ClaudeAdapter: Adapter {
         }
         guard pending == nil else { throw ClaudeAdapterError.turnInProgress }
         let uuid = UUID().uuidString.lowercased()
-        let line = try ClaudeStream.userMessage(message, uuid: uuid)
+        let line = try make(uuid)
         let gen = current.generation
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -291,24 +377,21 @@ public actor ClaudeAdapter: Adapter {
         }
     }
 
-    // Writes the message now, while deliver waits; see the header.
-    public func steer(_ message: Message) async -> Bool {
-        guard pending != nil, let current = running else { return false }
+    // Writes the message now, while prompt waits; see the header.
+    public func steer(_ message: Message) async -> SteerResult {
+        guard pending != nil, let current = running else { return .notJoined }
         let uuid = UUID().uuidString.lowercased()
-        guard let line = try? ClaudeStream.userMessage(message, uuid: uuid),
-              (try? current.stdin.write(contentsOf: line)) != nil else { return false }
+        guard let line = try? ClaudeStream.userMessage(message, uuid: uuid, aside: aside != nil),
+              (try? current.stdin.write(contentsOf: line)) != nil else { return .notJoined }
         outstanding.insert(uuid)
-        return true
+        return .joined
     }
 
-    public func onAgentTurn(_ handler: @escaping @Sendable (TurnEnd) -> Void) async {
-        agentTurnHandler = handler
-    }
-
-    public func stop() async {
+    public func close() async {
         let midTurn = pending != nil
         outstanding = []
         if let continuation = pending {
+            endEvents()
             pending = nil
             continuation.resume(throwing: CancellationError())
         }
@@ -346,14 +429,25 @@ public actor ClaudeAdapter: Adapter {
     private func received(_ line: Data, generation gen: Int) {
         guard running?.generation == gen else { return }
         running?.spoke = true
-        guard let event = ClaudeStream.parse(line) else { return }
+        guard let object = ClaudeStream.decode(line) else { return }
+        if let aside, pending != nil {
+            for part in ClaudeStream.parts(object) { events.hear(part).forEach(aside.onEvent) }
+        }
+        guard let event = ClaudeStream.parse(object) else { return }
         switch event {
         case .initialized(let named, let reported):
+            inTurn = true
             if let named { session = named }
             if let reported { model = reported }
+        case .context(let tokens):
+            context = tokens
+        case .compacted(let before, let after, let milliseconds):
+            context = nil
+            compaction = Consolidation(before: before, after: after, milliseconds: milliseconds ?? 0)
         case .replayed(let uuid):
             if outstanding.contains(uuid) { echoed = true }
         case .result(let named, let failure, let turns, let messages):
+            inTurn = false
             if let named { session = named }
             let end = TurnEnd(session: session, outcome: failure.map { .failed($0) } ?? .completed, model: model)
             if pending != nil, let messages, !outstanding.isDisjoint(with: messages) {
@@ -380,7 +474,7 @@ public actor ClaudeAdapter: Adapter {
             // Not ours: the agent's own turn, or the empty result after one.
             if failure == nil, turns == 0 { return }
             if let failure, pending == nil { running?.unsolicitedFailure = failure }
-            agentTurnHandler?(end)
+            updateSink.yield(.agentTurnEnded(end))
         case .other:
             break
         }
@@ -403,6 +497,7 @@ public actor ClaudeAdapter: Adapter {
             launchFailure = first.trimmingCharacters(in: .whitespaces)
         }
         if let continuation = pending {
+            endEvents()
             pending = nil
             outstanding = []
             continuation.resume(throwing: launchFailure.map { ClaudeAdapterError.quitAtLaunch($0, reason) }
@@ -415,34 +510,42 @@ public actor ClaudeAdapter: Adapter {
     private func writeFailed(uuid: String, _ reason: String) async {
         try? await Task.sleep(nanoseconds: 3_000_000_000)
         guard let continuation = pending, outstanding.contains(uuid) else { return }
+        endEvents()
         pending = nil
         outstanding = []
         continuation.resume(throwing: ClaudeAdapterError.exited(reason))
     }
 
+    // Ends what the aside's turn left open.
+    private func endEvents() {
+        let left = events.end()
+        if let aside { left.forEach(aside.onEvent) }
+    }
+
     private func finishTurn(_ end: TurnEnd) {
         guard let continuation = pending else { return }
+        endEvents()
         pending = nil
         outstanding = []
         continuation.resume(returning: end)
     }
 
-    // The task running deliver was cancelled. The turn cannot be taken back
+    // The task running prompt was cancelled. The turn cannot be taken back
     // from Claude, and its result would end the next turn, so the process goes.
     private func cancelTurn(generation gen: Int) async {
         guard running?.generation == gen, pending != nil else { return }
-        await stop()
+        await close()
     }
 }
 
 public enum ClaudeAdapterError: Error, Equatable, Sendable, CustomStringConvertible {
     case executableNotFound(String)
     case launchFailed(String)
-    // deliver with no process: never started, stopped, or exited (the reason).
+    // prompt with no process: never started, stopped, or exited (the reason).
     case notRunning(String?)
     // The process or its pipe went away mid-turn.
     case exited(String)
-    // deliver while a turn is running; the queue never does this.
+    // prompt while a turn is running; the queue never does this.
     case turnInProgress
     // The CLI lacks a flag Sirius needs (ClaudeCapabilities.required).
     case tooOld(version: String?, missing: [String])

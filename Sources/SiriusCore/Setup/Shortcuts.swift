@@ -126,7 +126,7 @@ public enum HoldKey: String, CaseIterable, Codable, Sendable {
 
 public enum Shortcuts {
     public static let composeKey = "shortcut.compose"
-    public static let holdKey = "shortcut.holdToTalk"
+    public static let holdKey = "shortcut.hold_to_talk"
 
     public static func compose(in defaults: UserDefaults) -> KeyCombo {
         guard let data = defaults.data(forKey: composeKey),

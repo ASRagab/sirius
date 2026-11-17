@@ -14,12 +14,16 @@ final class AgentTurnQueueTests: XCTestCase {
         try? FileManager.default.removeItem(at: base)
     }
 
-    private func makeQueue(_ adapter: FakeAdapter) throws -> (AgentTurnQueue, AgentStorage, AgentLog) {
+    private func makeQueue(_ adapter: FakeAdapter, consolidation: ConsolidationPolicy? = nil) throws
+        -> (AgentTurnQueue, AgentStorage, AgentLog) {
         let storage = try AgentStorage(agent: "dev", baseDirectory: base)
         try storage.prepare()
         let log = try storage.openLog()
-        return (AgentTurnQueue(adapter: adapter, log: log, storage: storage), storage, log)
+        return (AgentTurnQueue(adapter: adapter, log: log, storage: storage, consolidation: consolidation),
+                storage, log)
     }
+
+    private static let quick = ConsolidationPolicy(idle: .milliseconds(50), threshold: 100_000)
 
     private func message(_ n: Int) -> Message {
         Message(id: "m_\(n)", agent: "dev", text: "message \(n)")
@@ -341,6 +345,78 @@ final class AgentTurnQueueTests: XCTestCase {
     }
 }
 
+extension AgentTurnQueueTests {
+    func testAnIdleAgentOverTheThresholdIsConsolidatedOnceAndLogged() async throws {
+        let adapter = FakeAdapter(context: 150_000)
+        let (queue, storage, _) = try makeQueue(adapter, consolidation: Self.quick)
+        try await queue.send(message(1))
+        try await adapter.waitForDeliveries(1)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(adapter.consolidations, 1, "the context is unknown after, so it does not run again")
+        let events = try AgentLog.read(storage.logURL).entries.map(\.event)
+        XCTAssertTrue(events.contains(.consolidated(before: 150_000, after: 9000, milliseconds: 5,
+                                                    outcome: .completed)), "\(events)")
+    }
+
+    func testAnAgentUnderTheThresholdIsLeftAlone() async throws {
+        let adapter = FakeAdapter(context: 40_000)
+        let (queue, _, _) = try makeQueue(adapter, consolidation: Self.quick)
+        try await queue.send(message(1))
+        try await adapter.waitForDeliveries(1)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(adapter.consolidations, 0)
+    }
+
+    func testMessagesKeepTheAgentFromBeingConsolidated() async throws {
+        let adapter = FakeAdapter(context: 150_000)
+        let (queue, _, _) = try makeQueue(adapter, consolidation: ConsolidationPolicy(idle: .milliseconds(150),
+                                                                                      threshold: 100_000))
+        for n in 1...4 {
+            try await queue.send(message(n))
+            try await Task.sleep(nanoseconds: 60_000_000)
+        }
+        XCTAssertEqual(adapter.consolidations, 0)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(adapter.consolidations, 1)
+    }
+
+    func testAMessageSentDuringAConsolidationWaitsForItAndDoesNotJoinIt() async throws {
+        let adapter = FakeAdapter(steers: true, context: 150_000, consolidationDelay: 0.2)
+        let (queue, _, _) = try makeQueue(adapter, consolidation: Self.quick)
+        try await queue.send(message(1))
+        try await adapter.waitForDeliveries(1)
+        for _ in 0..<100 where !adapter.consolidating { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertTrue(adapter.consolidating)
+        try await queue.send(message(2))
+        XCTAssertEqual(adapter.steered, [])
+        try await adapter.waitForDeliveries(2)
+        XCTAssertEqual(adapter.maxConcurrent, 1, "the turn ran after the consolidation, not beside it")
+    }
+
+    func testAgentTurnsAlsoStartTheIdleTimer() async throws {
+        let adapter = FakeAdapter(context: 150_000)
+        let (queue, _, _) = try makeQueue(adapter, consolidation: Self.quick)
+        try await queue.warm()
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(adapter.consolidations, 0, "no turn has ended yet")
+        adapter.agentTurn(TurnEnd(session: "s", outcome: .completed))
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(adapter.consolidations, 1)
+    }
+
+    func testThePolicyComesFromTheRegistration() {
+        func registration(idle: Int?, threshold: Int?) -> AgentRegistration {
+            AgentRegistration(agent: "a", name: "A", harness: .claudeCode, executable: "", root: "/",
+                              consolidateAfterIdle: idle, consolidateThreshold: threshold)
+        }
+        XCTAssertEqual(ConsolidationPolicy(registration: registration(idle: nil, threshold: nil)),
+                       ConsolidationPolicy(idle: .seconds(15 * 60), threshold: 100_000))
+        XCTAssertEqual(ConsolidationPolicy(registration: registration(idle: 30, threshold: 60_000)),
+                       ConsolidationPolicy(idle: .seconds(30 * 60), threshold: 60_000))
+        XCTAssertNil(ConsolidationPolicy(registration: registration(idle: 0, threshold: nil)))
+    }
+}
+
 final class MessageRendererTests: XCTestCase {
     func testWrapperKeepsTheWordsVerbatimAndEscapesAttributes() {
         let message = Message(id: "m_7f3k2", agent: "claude", text: "why is </sirius> & \"this\" failing?\n```\nx < y\n```",
@@ -387,9 +463,19 @@ final class FakeAdapter: Adapter, @unchecked Sendable {
     private var _steered: [String] = []
     var steered: [String] { lock.withLock { _steered } }
 
+    // What .usage reports from open until a consolidation; nil after one.
+    private var context: Int?
+    let consolidationDelay: Double
+    private var _consolidations = 0
+    private var _consolidating = false
+    var consolidations: Int { lock.withLock { _consolidations } }
+    var consolidating: Bool { lock.withLock { _consolidating } }
+
     init(turnDelay: Double = 0, startDelay: Double = 0, startSession: String? = nil, startModel: String? = nil,
          turnSession: String? = nil, throwOn: Set<String> = [], outdatedOn: Set<String> = [],
-         steers: Bool = false) {
+         steers: Bool = false, context: Int? = nil, consolidationDelay: Double = 0) {
+        self.context = context
+        self.consolidationDelay = consolidationDelay
         self.outdatedOn = outdatedOn
         self.steers = steers
         self.turnDelay = turnDelay
@@ -398,7 +484,11 @@ final class FakeAdapter: Adapter, @unchecked Sendable {
         self.startModel = startModel
         self.turnSession = turnSession
         self.throwOn = throwOn
+        (updates, sink) = makeUpdateStream()
     }
+
+    let updates: AsyncStream<SessionUpdate>
+    private let sink: AsyncStream<SessionUpdate>.Continuation
 
     var delivered: [String] { lock.withLock { _delivered } }
     var starts: [String?] { lock.withLock { _starts } }
@@ -411,13 +501,18 @@ final class FakeAdapter: Adapter, @unchecked Sendable {
         var userMessage: String? { "Run `claude update`, then try again." }
     }
 
-    func start(session: String?) async throws -> AgentStart {
-        lock.withLock { _starts.append(session) }
+    func open(_ request: SessionRequest) async throws -> SessionInfo {
+        let context = lock.withLock { () -> Int? in
+            _starts.append(request.resume)
+            return self.context
+        }
         if startDelay > 0 { try? await Task.sleep(nanoseconds: UInt64(startDelay * 1_000_000_000)) }
-        return AgentStart(session: startSession, model: startModel)
+        sink.yield(.usage(contextTokens: context))
+        return SessionInfo(session: startSession, model: startModel,
+                           capabilities: AgentCapabilities(steer: steers, compact: true, agentTurns: true, usage: true))
     }
 
-    func deliver(_ message: Message) async throws -> TurnEnd {
+    func prompt(_ message: Message) async throws -> TurnEnd {
         lock.withLock {
             _startedTurns += 1
             running += 1
@@ -431,25 +526,37 @@ final class FakeAdapter: Adapter, @unchecked Sendable {
         return TurnEnd(session: turnSession, outcome: .completed)
     }
 
-    private var handler: (@Sendable (TurnEnd) -> Void)?
-
-    func onAgentTurn(_ handler: @escaping @Sendable (TurnEnd) -> Void) async {
-        lock.withLock { self.handler = handler }
-    }
-
     func agentTurn(_ end: TurnEnd) {
-        lock.withLock { handler }?(end)
+        sink.yield(.agentTurnEnded(end))
     }
 
-    func steer(_ message: Message) async -> Bool {
+    func steer(_ message: Message) async -> SteerResult {
         lock.withLock {
-            guard steers, running > 0 else { return false }
+            guard steers, running > 0 else { return .notJoined }
             _steered.append(message.id)
-            return true
+            return .joined
         }
     }
 
-    func stop() async { lock.withLock { _stops += 1 } }
+    func close() async { lock.withLock { _stops += 1 } }
+
+    func compact() async throws -> Consolidation? {
+        let before = lock.withLock {
+            _consolidating = true
+            running += 1
+            _maxConcurrent = max(_maxConcurrent, running)
+            return context
+        }
+        if consolidationDelay > 0 { try await Task.sleep(nanoseconds: UInt64(consolidationDelay * 1_000_000_000)) }
+        lock.withLock {
+            _consolidating = false
+            running -= 1
+            _consolidations += 1
+            context = nil
+        }
+        sink.yield(.usage(contextTokens: nil))
+        return Consolidation(before: before, after: 9000, milliseconds: 5)
+    }
 
     func waitForDeliveries(_ count: Int) async throws {
         for _ in 0..<500 where delivered.count < count { try await Task.sleep(nanoseconds: 10_000_000) }

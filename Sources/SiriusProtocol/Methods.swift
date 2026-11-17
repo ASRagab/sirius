@@ -5,7 +5,9 @@ public enum DisplayKind: String, CaseIterable, Sendable, Codable {
     public var accepts: Set<ContentBlock.BlockType>? {
         switch self {
         case .toast: [.text]
-        case .dialog, .aside: nil
+        // The brief the aside's session answers from, as text.
+        case .aside: [.text]
+        case .dialog: nil
         }
     }
 }
@@ -18,14 +20,23 @@ public struct DisplayParams: Equatable, Sendable, Encodable {
     public var content: [ContentBlock]
     // toast only. Stays until dismissed.
     public var alert: Bool?
-    // aside only. Deferred.
+    // toast only. Takes the place of the agent's own toast, on screen or
+    // waiting, instead of queueing behind it.
+    public var replace: Bool?
+    // aside only. Deferred: refused until it is built.
     public var session: String?
+    // aside only. The handle of an item from a message's context, to open
+    // the aside beside.
+    public var anchor: String?
 
-    public init(kind: DisplayKind, content: [ContentBlock], alert: Bool? = nil, session: String? = nil) {
+    public init(kind: DisplayKind, content: [ContentBlock], alert: Bool? = nil, replace: Bool? = nil,
+                session: String? = nil, anchor: String? = nil) {
         self.kind = kind
         self.content = content
         self.alert = alert
+        self.replace = replace
         self.session = session
+        self.anchor = anchor
     }
 }
 
@@ -49,17 +60,24 @@ public struct SpeakParams: Equatable, Sendable, Encodable {
     }
 }
 
+public struct PeerMessageParams: Equatable, Sendable, Codable {
+    public let sender: String
+    public let text: String
+}
+
 // A validated request's method and params.
 public enum Call: Equatable, Sendable {
     case display(DisplayParams)
     case notify(NotifyParams)
     case speak(SpeakParams)
+    case agentMessage(PeerMessageParams)
 
     public var method: Method {
         switch self {
         case .display: .display
         case .notify: .notify
         case .speak: .speak
+        case .agentMessage: .agentMessage
         }
     }
 }

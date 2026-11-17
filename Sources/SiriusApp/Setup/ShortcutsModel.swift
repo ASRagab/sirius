@@ -1,7 +1,7 @@
 import AppKit
 import SiriusCore
 
-// The last page's two shortcuts, rebindable in place (the spec's
+// The onboarding sheet's two shortcuts, rebindable in place (the spec's
 // "Rebindable shortcuts"). Compose is recorded: a click on it sets the
 // current shortcut aside and shows "Press new shortcut…"; the next key with
 // ⌘, ⌃ or ⌥ (or an F-key) is bound unless macOS or another app has it, in
@@ -57,6 +57,16 @@ final class ShortcutsModel: ObservableObject {
                        suspend: { [weak composer] in composer?.suspendShortcut() },
                        resume: { [weak composer] in composer?.resumeShortcut() },
                        chooseHoldKey: { [weak dictation] in dictation?.setHoldKey($0) })
+    }
+
+    // Compose's shortcut as its control shows it: the glyphs, or the
+    // recording's prompt, or why a key was refused.
+    var composeText: String {
+        switch state {
+        case .idle: KeyComboText.string(compose)
+        case .recording(let hint): hint ?? "Press new shortcut…" // TODO(copy): copy
+        case .refused(let text): text
+        }
     }
 
     var isRecording: Bool {

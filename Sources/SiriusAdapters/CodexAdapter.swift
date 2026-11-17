@@ -8,43 +8,66 @@ import SiriusProtocol
 // with its tools approved, because Codex's sandbox without network access
 // refuses socket connects from the agent's shell.
 //
-// start: spawn app-server in the root, initialize, then thread/start (or
+// open:  spawn app-server in the root, initialize, then thread/start (or
 //        thread/resume) with sandbox workspace-write and approvalPolicy
-//        never; returns the thread id at once. The sandbox has network
-//        access, set at launch (CodexLaunch.arguments): if Claude gets
-//        network access, Codex does too.
-// deliver: turn/start with the rendered text, plus each image attachment as
+//        on-request; returns the thread id at once. Codex's auto reviewer
+//        decides escalations, and the sandbox has network access, both set
+//        at launch (CodexLaunch.arguments): if Claude gets network access,
+//        Codex does too.
+// prompt: turn/start with the rendered text, plus each image attachment as
 //        a localImage item; the turn ends on turn/completed.
-// stop: close stdin, then terminate the process.
+// steer: turn/steer into the running turn.
+// close: close stdin, then terminate the process.
+//
+// Declares steer only. Sirius doesn't compact Codex yet (app-server has
+// thread/compact/start), doesn't hear turns Codex starts by itself, and
+// doesn't read its usage, so `updates` never yields.
+//
+// An aside (AsideOptions) is a second app-server on a fork of the agent's
+// thread: thread/fork gives it the history under a new id, read from the
+// rollout on disk, and leaves the agent's own process and thread alone,
+// mid-turn included; its answer streams as item/agentMessage/delta
+// (checked on 0.159.1). A fork keeps the developer instructions in its
+// history whatever thread/fork is given, so the aside's instructions go
+// at the head of its first turn instead. It has no sirius MCP server.
 public actor CodexAdapter: Adapter {
     public nonisolated let registration: AgentRegistration
     public nonisolated let socketPath: String
-    // Holds sirius and sirius-mcp: Sirius.app/Contents/Helpers.
+    // Holds sirius, sirius-mcp and wmem: Sirius.app/Contents/Helpers.
     public nonisolated let helpersDirectory: URL
     // Given as developer instructions on every thread/start and thread/resume.
     public nonisolated let instructions: String?
     // Given to the worker agents it starts (CodexLaunch.arguments).
     public nonisolated let workerInstructions: String?
+    private let aside: AsideOptions?
+    // Whether the aside's instructions have gone with a turn of this thread.
+    private var briefed = false
 
     private var server: CodexAppServer?
     private var thread: String?
-    // The turn deliver() is waiting on, which steer() joins.
+    // The turn prompt() is waiting on, which steer() joins.
     private var activeTurn: String?
     // What thread/start or thread/resume reported.
     private var model: String?
     private var observer: (@Sendable (String) -> Void)?
+    public nonisolated let updates: AsyncStream<SessionUpdate>
+    private let updateSink: AsyncStream<SessionUpdate>.Continuation
+
+    static let capabilities = AgentCapabilities(steer: true)
 
     public init(registration: AgentRegistration, socketPath: String, helpersDirectory: URL,
-                instructions: String? = nil, workerInstructions: String? = nil) {
+                instructions: String? = nil, workerInstructions: String? = nil, aside: AsideOptions? = nil) {
+        self.aside = aside
         self.registration = registration
         self.socketPath = socketPath
         self.helpersDirectory = helpersDirectory
         self.instructions = instructions
         self.workerInstructions = workerInstructions
+        (updates, updateSink) = makeUpdateStream()
     }
 
     // Every JSON-RPC line, ">> " sent or "<< " received. Takes effect at the
-    // next start. Tests and diagnostics.
+    // next open. Tests and diagnostics.
     func observe(_ observer: @escaping @Sendable (String) -> Void) {
         self.observer = observer
     }
@@ -52,8 +75,9 @@ public actor CodexAdapter: Adapter {
     // The running app-server's pid, for tests.
     var processIdentifier: Int32? { server?.processIdentifier }
 
-    public func start(session: String?) async throws -> AgentStart {
-        await stop()
+    public func open(_ request: SessionRequest) async throws -> SessionInfo {
+        let session = request.resume
+        await close()
         let environment = ProcessInfo.processInfo.environment
         guard let executable = CodexLaunch.findExecutable(registered: registration.executable,
                                                           environment: environment) else {
@@ -62,18 +86,24 @@ public actor CodexAdapter: Adapter {
         let capabilities = await CodexProbe.shared.capabilities(executable: executable, environment: environment)
         guard !capabilities.isTooOld else { throw CodexAdapterError.tooOld(version: capabilities.version) }
         var childEnvironment = environment
-        childEnvironment[SiriusEnvironment.socket] = socketPath
+        // An aside has no way to Sirius: its words are the reply.
+        childEnvironment[SiriusEnvironment.socket] = aside == nil ? socketPath : nil
+        // Helpers first on PATH, as for Claude, so the shell reaches wmem.
+        childEnvironment["PATH"] = helpersDirectory.path + ":"
+            + (environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
         let mcpHelper = helpersDirectory.appendingPathComponent("sirius-mcp").path
         let server = CodexAppServer(
             executable: URL(fileURLWithPath: executable),
             arguments: CodexLaunch.arguments(mcpHelper: mcpHelper, socketPath: socketPath,
-                                             fast: registration.fast == true, workers: workerInstructions,
-                                             capabilities: capabilities),
+                                             fast: registration.isFast, workers: workerInstructions,
+                                             aside: aside != nil, capabilities: capabilities),
             environment: childEnvironment,
             directory: URL(fileURLWithPath: registration.root, isDirectory: true))
         if let observer { server.observe(observer) }
+        if let aside { server.stream(to: aside.onEvent) }
         try server.launch()
         self.server = server
+        briefed = false
 
         do {
             _ = try await server.request("initialize", .object([
@@ -81,16 +111,18 @@ public actor CodexAdapter: Adapter {
                                        "version": .string(Self.clientVersion)]),
             ]))
             try server.notify("initialized")
-            let opened = try await openThread(on: server, resuming: session)
+            let opened = try await openThread(on: server, resuming: session, fork: request.fork)
             thread = opened.id
+            server.follow(thread: opened.id)
             model = opened.model ?? registration.model
-            return AgentStart(session: opened.id, model: model, effort: opened.effort ?? registration.effort)
+            return SessionInfo(session: opened.id, model: model, effort: opened.effort ?? registration.effort,
+                               capabilities: Self.capabilities)
         } catch {
             // Codex quit or refused as it started, e.g. at initialize on a
             // -c key it cannot read: say why, in its own first words.
             var why: String?
             switch error {
-            case CodexAppServerError.rpc(_, let message): why = message
+            case CodexAppServerError.rpc(_, _, let message): why = message
             case is CodexAppServerError: why = await server.firstStderrLine()
             default: break
             }
@@ -101,9 +133,15 @@ public actor CodexAdapter: Adapter {
         }
     }
 
-    public func deliver(_ message: Message) async throws -> TurnEnd {
+    public func prompt(_ message: Message) async throws -> TurnEnd {
         guard let server, let thread else { throw CodexAdapterError.notStarted }
-        let params = Self.turnParams(thread: thread, message: message, effort: registration.effort)
+        var lead: String?
+        if let aside, !briefed {
+            lead = aside.instructions
+            briefed = true
+        }
+        let params = Self.turnParams(thread: thread, message: message, effort: registration.effort,
+                                     aside: aside != nil, lead: lead)
         let started = try await server.request("turn/start", .object(params))
         guard let turnId = started["turn"]?["id"]?.string else {
             throw CodexAdapterError.unexpectedResponse("turn/start returned no turn id")
@@ -125,21 +163,24 @@ public actor CodexAdapter: Adapter {
     // a running command finishes; one turn/completed still ends it. Codex
     // refuses with -32600 when no turn is active or another one is, as when
     // the turn has just ended: the queue then delivers it as its own turn.
-    public func steer(_ message: Message) async -> Bool {
-        guard let server, let thread, let activeTurn else { return false }
+    public func steer(_ message: Message) async -> SteerResult {
+        guard let server, let thread, let activeTurn else { return .notJoined }
         do {
             _ = try await server.request("turn/steer", .object([
                 "threadId": .string(thread),
                 "expectedTurnId": .string(activeTurn),
-                "input": .array(Self.input(for: message)),
+                "input": .array(Self.input(for: message, aside: aside != nil)),
             ]))
-            return true
+            return .joined
         } catch {
-            return false
+            return .notJoined
         }
     }
 
-    public func stop() async {
+    // Not declared; see the header.
+    public func compact() async throws -> Consolidation? { nil }
+
+    public func close() async {
         guard let server else { return }
         self.server = nil
         thread = nil
@@ -162,7 +203,7 @@ public actor CodexAdapter: Adapter {
         var params: [String: JSONValue] = [
             "cwd": .string(registration.root),
             "sandbox": .string("workspace-write"),
-            "approvalPolicy": .string("never"),
+            "approvalPolicy": .string("on-request"),
         ]
         if let model = registration.model { params["model"] = .string(model) }
         if let instructions { params["developerInstructions"] = .string(instructions) }
@@ -170,18 +211,39 @@ public actor CodexAdapter: Adapter {
     }
 
     // turn/start's params. Codex takes effort per turn, not per thread.
-    static func turnParams(thread: String, message: Message, effort: String?) -> [String: JSONValue] {
+    static func turnParams(thread: String, message: Message, effort: String?, aside: Bool = false,
+                           lead: String? = nil) -> [String: JSONValue] {
         var params: [String: JSONValue] = [
             "threadId": .string(thread),
-            "input": .array(input(for: message)),
+            "input": .array(input(for: message, aside: aside, lead: lead)),
         ]
         if let effort { params["effort"] = .string(effort) }
         return params
     }
 
-    private func openThread(on server: CodexAppServer, resuming session: String?) async throws -> OpenedThread {
-        let params = Self.threadParams(registration: registration, instructions: instructions)
-        if let session {
+    private func openThread(on server: CodexAppServer, resuming session: String?,
+                            fork: Bool = false) async throws -> OpenedThread {
+        let params = Self.threadParams(registration: registration, instructions: aside?.instructions ?? instructions)
+        if let session, fork {
+            // excludeTurns: the response then leaves the history out, which
+            // Sirius never reads, and Codex does not warn of its
+            // deprecated full hydration. A fork kept on disk can be
+            // resumed should this app-server die; where Codex refuses one,
+            // an ephemeral fork still carries the history.
+            var forked = params
+            forked["threadId"] = .string(session)
+            forked["excludeTurns"] = .bool(true)
+            do {
+                return try opened(try await server.request("thread/fork", .object(forked)))
+            } catch CodexAppServerError.rpc {
+                forked["ephemeral"] = .bool(true)
+                do {
+                    return try opened(try await server.request("thread/fork", .object(forked)))
+                } catch CodexAppServerError.rpc {
+                    // No rollout to fork from: the aside starts empty.
+                }
+            }
+        } else if let session {
             var resume = params
             resume["threadId"] = .string(session)
             do {
@@ -204,10 +266,14 @@ public actor CodexAdapter: Adapter {
 
     // The rendered wrapper, then each image beside it as a native image the
     // model can see. The wrapper still names its path (DECIDED 2026.10.09).
-    static func input(for message: Message) -> [JSONValue] {
+    // In an aside the text is the user's words alone, after `lead` (the
+    // aside's instructions) on its first turn.
+    static func input(for message: Message, aside: Bool = false, lead: String? = nil) -> [JSONValue] {
+        var text = aside ? MessageRenderer.renderAside(message) : MessageRenderer.render(message)
+        if let lead { text = lead + "\n\n---\n\n" + text }
         var items: [JSONValue] = [.object([
             "type": .string("text"),
-            "text": .string(MessageRenderer.render(message)),
+            "text": .string(text),
             "text_elements": .array([]),
         ])]
         for attachment in message.attachments where attachment.mimeType.lowercased().hasPrefix("image/") {

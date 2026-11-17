@@ -225,18 +225,21 @@ public struct AgentRegistry: Sendable {
             let voice = try optional("voice").get()
             let model = try optional("model").get()
             let effort = try optional("effort").get()
-            var fast: Bool?
-            switch object["fast"] {
-            case nil, .null?: break
-            case .bool(let value)?: fast = value
-            default: return .failure(.malformed("fast is not true or false"))
+            func flag(_ key: String) -> Result<Bool?, RegistryError> {
+                switch object[key] {
+                case nil, .null?: return .success(nil)
+                case .bool(let value)?: return .success(value)
+                default: return .failure(.malformed("\(key) is not true or false"))
+                }
             }
+            let fast = try flag("fast").get()
+            let enabled = try flag("enabled").get()
             guard let harness = AgentRegistration.Harness(rawValue: harnessName) else {
                 return .failure(.unknownHarness(harnessName))
             }
             return .success(AgentRegistration(agent: agent, name: name, harness: harness,
                                               executable: executable, root: root, voice: voice,
-                                              model: model, effort: effort, fast: fast))
+                                              model: model, effort: effort, fast: fast, enabled: enabled))
         } catch {
             // Result.get() throws the typed RegistryError.
             return .failure(error)

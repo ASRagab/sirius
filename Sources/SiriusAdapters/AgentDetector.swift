@@ -10,6 +10,7 @@ public struct AgentDetector: Sendable {
         switch harness {
         case .claudeCode: "claude"
         case .codex: "codex"
+        case .museCode: "muse"
         }
     }
 

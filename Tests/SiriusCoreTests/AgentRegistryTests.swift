@@ -92,6 +92,29 @@ final class AgentRegistryTests: XCTestCase {
         XCTAssertThrowsError(try AgentRegistry.parse(Data((base + #","fast":"yes"}"#).utf8)).get())
     }
 
+    func testAnAgentIsOnUnlessEnabledIsFalse() throws {
+        let base = #"{"agent":"a","name":"A","harness":"muse-code","executable":"/x","root":"/r""#
+        XCTAssertTrue(try AgentRegistry.parse(Data((base + "}").utf8)).get().isEnabled, "missing: on")
+        XCTAssertTrue(try AgentRegistry.parse(Data((base + #","enabled":true}"#).utf8)).get().isEnabled)
+        XCTAssertFalse(try AgentRegistry.parse(Data((base + #","enabled":false}"#).utf8)).get().isEnabled)
+        XCTAssertThrowsError(try AgentRegistry.parse(Data((base + #","enabled":"no"}"#).utf8)).get())
+    }
+
+    // Codex is fast unless agent.json says false; Claude only when
+    // it says true.
+    func testCodexIsFastUnlessExplicitlyOff() throws {
+        func parsed(_ harness: String, _ tail: String) throws -> AgentRegistration {
+            let base = #"{"agent":"a","name":"A","harness":"\#(harness)","executable":"/x","root":"/r""#
+            return try AgentRegistry.parse(Data((base + tail).utf8)).get()
+        }
+        XCTAssertTrue(try parsed("codex", "}").isFast, "missing: on")
+        XCTAssertTrue(try parsed("codex", #","fast":true}"#).isFast)
+        XCTAssertFalse(try parsed("codex", #","fast":false}"#).isFast)
+        XCTAssertFalse(try parsed("claude-code", "}").isFast, "missing: off")
+        XCTAssertTrue(try parsed("claude-code", #","fast":true}"#).isFast)
+        XCTAssertFalse(try parsed("claude-code", #","fast":false}"#).isFast)
+    }
+
     func testIconIsTheFirstFormPresent() throws {
         try put("claude", json: definition(agent: "claude"))
         let registry = AgentRegistry(directory: registryDirectory)

@@ -6,13 +6,16 @@
 #   Contents/MacOS/Sirius          the app (target SiriusApp)
 #   Contents/Helpers/sirius        the CLI helper the agents run
 #   Contents/Helpers/sirius-mcp    the MCP helper
+#   Contents/Helpers/wmem          the working-memory CLI
 #   Contents/Frameworks/Sparkle.framework   in-app updates
 #
 # The version (a release number such as v0.1.0 or 0.1.0) goes into
 # CFBundleShortVersionString. Without one it comes from the latest v* tag,
 # or 0.0.1. Apple requires one to three period-separated integers, so
 # anything else fails the build. CFBundleVersion is the build number: the
-# commit count of HEAD unless SIRIUS_BUILD_NUMBER says otherwise. Git
+# commit count of HEAD plus 400 unless SIRIUS_BUILD_NUMBER says otherwise
+# (the offset keeps build numbers above those of releases built before this
+# repository's history began at 0.3.0; Sparkle only offers a higher one). Git
 # provenance (git describe --tags --always --dirty) goes into the custom key
 # SiriusGitRevision, never into the version keys.
 #
@@ -27,7 +30,7 @@
 #   SIRIUS_TIMESTAMP=none  skip the secure timestamp (local builds, offline);
 #                          notarization needs it, so releases leave this unset
 #   SIRIUS_BUILD_DIR       output directory (default: build)
-#   SIRIUS_BUILD_NUMBER    CFBundleVersion (default: git rev-list --count HEAD)
+#   SIRIUS_BUILD_NUMBER    CFBundleVersion (default: git rev-list --count HEAD, plus 400)
 #   SIRIUS_GIT_REVISION    SiriusGitRevision (default: git describe --tags --always --dirty)
 
 set -euo pipefail
@@ -35,7 +38,7 @@ cd "$(dirname "$0")/.."
 
 VERSION="${1:-$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo 0.0.1)}"
 VERSION="${VERSION#v}"
-BUILD_NUMBER="${SIRIUS_BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
+BUILD_NUMBER="${SIRIUS_BUILD_NUMBER:-$(( $(git rev-list --count HEAD 2>/dev/null || echo 1) + 400 ))}"
 GIT_REVISION="${SIRIUS_GIT_REVISION:-$(git describe --tags --always --dirty 2>/dev/null || echo unknown)}"
 OUT="${SIRIUS_BUILD_DIR:-build}"
 APP="$OUT/Sirius.app"
@@ -55,7 +58,7 @@ IDENTITY="${SIRIUS_SIGN_IDENTITY:-$(security find-identity -v -p codesigning \
     | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)}"
 
 echo "→ building sirius $VERSION (build $BUILD_NUMBER, $GIT_REVISION; release, arm64)"
-for product in SiriusApp sirius sirius-mcp; do
+for product in SiriusApp sirius sirius-mcp wmem; do
     swift build -c release --arch arm64 --product "$product"
 done
 BIN="$(swift build -c release --arch arm64 --show-bin-path)"
@@ -69,7 +72,9 @@ cp "$BIN/SiriusApp" "$APP/Contents/MacOS/Sirius"
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Sirius"
 cp "$BIN/sirius" "$APP/Contents/Helpers/sirius"
 cp "$BIN/sirius-mcp" "$APP/Contents/Helpers/sirius-mcp"
-strip -x "$APP/Contents/MacOS/Sirius" "$APP/Contents/Helpers/sirius" "$APP/Contents/Helpers/sirius-mcp"
+cp "$BIN/wmem" "$APP/Contents/Helpers/wmem"
+strip -x "$APP/Contents/MacOS/Sirius" "$APP/Contents/Helpers/sirius" "$APP/Contents/Helpers/sirius-mcp" \
+    "$APP/Contents/Helpers/wmem"
 mkdir -p "$APP/Contents/Frameworks"
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 cp packaging/Info.plist "$APP/Contents/Info.plist"
@@ -83,7 +88,7 @@ ditto packaging/images "$APP/Contents/Resources/images"
 # Each harness's default mark, <harness>.svg, copied into an agent's
 # registry folder as icon.svg when onboarding registers it.
 ditto packaging/marks "$APP/Contents/Resources/marks"
-# The app icon: the menu bar's sparkle on the settings gradient, a first pass.
+# The app icon, rendered from packaging/icon/sirius-icon.svg by scripts/make-icon.sh.
 cp packaging/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$APP/Contents/Info.plist"
@@ -122,7 +127,7 @@ for nested in \
         --sign "$SIGN_AS" "$nested"
 done
 # Then the helpers, then the app that contains them all.
-for helper in sirius sirius-mcp; do
+for helper in sirius sirius-mcp wmem; do
     codesign --force --options runtime $TIMESTAMP \
         --identifier "$BUNDLE_ID.$helper" \
         --sign "$SIGN_AS" "$APP/Contents/Helpers/$helper"

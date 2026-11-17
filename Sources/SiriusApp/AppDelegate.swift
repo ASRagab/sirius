@@ -3,13 +3,16 @@ import SiriusCore
 
 // The status item and its menu. Everything else the app shows is a panel.
 // Option-click adds the Debug items: the toast transition cases, the
-// dictation pill's previews, the onboarding at each step and slow motion.
+// dictation pill's previews, the onboarding and slow motion.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private let queue: CommandQueue
-    // Opens the onboarding at a step.
-    private let openOnboarding: (OnboardingStep) -> Void
+    // Opens the onboarding; with true, at its agents. The debug menu's
+    // Onboarding item.
+    private let openOnboarding: (_ agents: Bool) -> Void
+    // Opens the Settings window, for Settings….
+    private let openSettings: () -> Void
     // Opens the composer, and its shortcut now, for the Compose item: the
     // composer is reachable even when its shortcut is not (a tester,
     // 2026.10.12).
@@ -18,10 +21,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var debugItems: [NSMenuItem] = []
     private(set) var composeItem: NSMenuItem?
 
-    init(queue: CommandQueue, openOnboarding: @escaping (OnboardingStep) -> Void,
+    init(queue: CommandQueue, openOnboarding: @escaping (_ agents: Bool) -> Void,
+         openSettings: @escaping () -> Void = {},
          openComposer: @escaping () -> Void = {}, composeShortcut: @escaping () -> KeyCombo = { .compose }) {
         self.queue = queue
         self.openOnboarding = openOnboarding
+        self.openSettings = openSettings
         self.openComposer = openComposer
         self.composeShortcut = composeShortcut
     }
@@ -57,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let compose = makeComposeItem()
         composeItem = compose
         menu.addItem(compose)
-        let setup = NSMenuItem(title: "Settings…", action: #selector(showSetup(_:)), keyEquivalent: ",")
+        let setup = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
         setup.target = self
         menu.addItem(setup)
         // Below Settings…, as in Parrot's menu.
@@ -96,27 +101,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pill.target = self
         let download = NSMenuItem(title: "Dictation Pill: Download", action: #selector(previewDownload(_:)), keyEquivalent: "")
         download.target = self
-        let onboarding = NSMenu()
-        for step in OnboardingStep.allCases {
-            let item = NSMenuItem(title: Self.debugName(step), action: #selector(showOnboarding(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = step.rawValue
-            onboarding.addItem(item)
-        }
-        let onboardingItem = NSMenuItem(title: "Onboarding", action: nil, keyEquivalent: "")
-        onboardingItem.submenu = onboarding
+        let onboardingItem = NSMenuItem(title: "Onboarding", action: #selector(showOnboarding(_:)), keyEquivalent: "")
+        onboardingItem.target = self
         let slow = NSMenuItem(title: "Slow Motion (10×)", action: #selector(toggleSlow(_:)), keyEquivalent: "")
         slow.target = self
         return [casesItem, pill, download, onboardingItem, slow, .separator()]
-    }
-
-    private static func debugName(_ step: OnboardingStep) -> String {
-        switch step {
-        case .welcome: "Welcome"
-        case .agents: "Agents"
-        case .permissions: "Permissions"
-        case .done: "Done"
-        }
     }
 
     @objc private func playCase(_ item: NSMenuItem) {
@@ -131,9 +120,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DictationPillDemo.download()
     }
 
-    // The onboarding at its agents step.
-    @objc private func showSetup(_ item: NSMenuItem) {
-        openOnboarding(.agents)
+    // The Settings window, not the onboarding.
+    @objc func showSettings(_ item: NSMenuItem?) {
+        openSettings()
     }
 
     // Once the menu has closed, so the composer takes the keyboard.
@@ -143,8 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showOnboarding(_ item: NSMenuItem) {
-        guard let step = OnboardingStep(rawValue: item.tag) else { return }
-        openOnboarding(step)
+        openOnboarding(false)
     }
 
     @objc private func toggleSlow(_ item: NSMenuItem) {

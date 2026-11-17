@@ -31,6 +31,34 @@ final class ToastQueueTests: XCTestCase {
         XCTAssertEqual(queue.backlog, 0)
     }
 
+    // A result takes the place of its ack rather than queueing behind it.
+    func testReplace() throws {
+        var queue = ToastQueue(capacity: 1)
+        guard case .shown(let ack) = queue.enqueue(agent: "dev", text: "ack", alert: false) else {
+            return XCTFail("the first toast shows at once")
+        }
+        guard case .replaced(let result) = queue.enqueue(agent: "dev", text: "result", alert: false, replace: true) else {
+            return XCTFail("the agent's toast on screen is replaced")
+        }
+        XCTAssertNotEqual(result.seq, ack.seq, "a fresh seq, so the ack's timer finds it gone")
+        XCTAssertNil(queue.dismiss(seq: ack.seq))
+        XCTAssertEqual(queue.current?.text, "result")
+
+        XCTAssertEqual(queue.enqueue(agent: "x", text: "other", alert: false, replace: true), .queued(backlog: 1),
+                       "another agent's toast is never replaced; it queues")
+        XCTAssertEqual(queue.enqueue(agent: "x", text: "newer", alert: false, replace: true), .queued(backlog: 1),
+                       "its own waiting toast is replaced, even with the queue full")
+        XCTAssertEqual(queue.enqueue(agent: "dev", text: "more", alert: false), .full)
+        _ = queue.dismiss(seq: try XCTUnwrap(queue.current).seq)
+        XCTAssertEqual(queue.current?.text, "newer")
+
+        _ = queue.dismiss(seq: try XCTUnwrap(queue.current).seq)
+        _ = queue.enqueue(agent: "dev", text: "question", alert: true)
+        XCTAssertEqual(queue.enqueue(agent: "dev", text: "after", alert: false, replace: true), .queued(backlog: 1),
+                       "an alert is never replaced")
+        XCTAssertEqual(queue.current?.text, "question")
+    }
+
     func testDurations() {
         func duration(_ count: Int) -> Double? {
             Toast(seq: 0, agent: "", text: String(repeating: "x", count: count), alert: false).duration

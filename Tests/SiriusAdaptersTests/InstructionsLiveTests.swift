@@ -83,11 +83,11 @@ final class InstructionsLiveTests: XCTestCase {
                                     helpersDirectory: Self.helpers,
                                     systemPrompt: try InstructionsTemplates.seeded(.claudeCode),
                                     observer: { lines.append(String(decoding: $0, as: UTF8.self)) })
-        _ = try await adapter.start(session: nil)
-        let end = try? await withWatchdog({ await adapter.stop() }) {
-            try await adapter.deliver(Message(id: "m_t13c\(index)", agent: "dev", text: prompt))
+        _ = try await adapter.open(SessionRequest())
+        let end = try? await withWatchdog({ await adapter.close() }) {
+            try await adapter.prompt(Message(id: "m_t13c\(index)", agent: "dev", text: prompt))
         }
-        await adapter.stop()
+        await adapter.close()
 
         // The first Bash call that runs sirius, and its result.
         var firstId: String?, first: String?, succeeded = false
@@ -126,11 +126,11 @@ final class InstructionsLiveTests: XCTestCase {
                                    helpersDirectory: Self.helpers,
                                    instructions: try InstructionsTemplates.seeded(.codex))
         await adapter.observe { lines.append($0) }
-        _ = try await adapter.start(session: nil)
-        let end = try? await withWatchdog({ await adapter.stop() }) {
-            try await adapter.deliver(Message(id: "m_t13x\(index)", agent: "dev", text: prompt))
+        _ = try await adapter.open(SessionRequest())
+        let end = try? await withWatchdog({ await adapter.close() }) {
+            try await adapter.prompt(Message(id: "m_t13x\(index)", agent: "dev", text: prompt))
         }
-        await adapter.stop()
+        await adapter.close()
 
         var first: String?, succeeded = false
         for line in lines.all where line.hasPrefix("<< ") {

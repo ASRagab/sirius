@@ -25,8 +25,11 @@ let package = Package(
         // The socket client both helpers share: connect to $SIRIUS_SOCKET,
         // write one frame, read one, map the outcome.
         .target(name: "SiriusClient", dependencies: ["SiriusProtocol"]),
+        // WMEM.md's format and the wmem commands, shared by the wmem helper
+        // and Core's working-memory check.
+        .target(name: "SiriusMemory"),
         // Registry, log, socket server, queue.
-        .target(name: "SiriusCore", dependencies: ["SiriusProtocol"]),
+        .target(name: "SiriusCore", dependencies: ["SiriusProtocol", "SiriusMemory"]),
         // One file per adapter: start, resume, deliver, turn end, stop.
         .target(name: "SiriusAdapters", dependencies: ["SiriusCore"]),
         // Sirius.app: composer, presenter, setup. scripts/build-app.sh
@@ -57,10 +60,15 @@ let package = Package(
             name: "sirius-mcp",
             dependencies: ["SiriusProtocol", "SiriusClient"]
         ),
+        // The working-memory CLI the agents run from their shell. No Core.
+        .executableTarget(name: "wmem", dependencies: ["SiriusMemory"]),
         .testTarget(name: "SiriusProtocolTests", dependencies: ["SiriusProtocol"]),
         .testTarget(name: "SiriusClientTests", dependencies: ["SiriusClient"]),
         .testTarget(name: "SiriusCoreTests", dependencies: ["SiriusCore"]),
-        .testTarget(name: "SiriusAdaptersTests", dependencies: ["SiriusAdapters", "SiriusClient"]),
+        .testTarget(name: "SiriusMemoryTests", dependencies: ["SiriusMemory"]),
+        // Fixtures: harness streams as recorded.
+        .testTarget(name: "SiriusAdaptersTests", dependencies: ["SiriusAdapters", "SiriusClient"],
+                    resources: [.copy("Fixtures")]),
         // The app's own logic that needs AppKit: the shortcut recording,
         // the menu. Nothing here registers a real hot key.
         .testTarget(name: "SiriusAppTests", dependencies: ["SiriusApp", "SiriusCore", "SiriusProtocol"]),

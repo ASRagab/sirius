@@ -33,7 +33,7 @@ extension Call {
     // display and notify answer delivered; speak answers its queued receipt.
     public func admits(_ result: MethodResult) -> Bool {
         switch (self, result) {
-        case (.display, .delivered), (.notify, .delivered), (.speak, .queued): true
+        case (.display, .delivered), (.notify, .delivered), (.agentMessage, .delivered), (.speak, .queued): true
         default: false
         }
     }

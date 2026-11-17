@@ -7,6 +7,9 @@
         "alert": {
           "type": "boolean"
         },
+        "anchor": {
+          "type": "string"
+        },
         "content": {
           "anyOf": [
             {
@@ -332,6 +335,9 @@
             "aside"
           ],
           "type": "string"
+        },
+        "replace": {
+          "type": "boolean"
         },
         "session": {
           "type": "string"

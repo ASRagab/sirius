@@ -14,6 +14,8 @@ public final class LoggingCommandQueue: CommandQueue, @unchecked Sendable {
     // Guarded by lock.
     private var logs: [String: AgentLog] = [:]
 
+    private var turnQueues: [String: AgentTurnQueue] = [:]
+
     public init(inner: any CommandQueue, report: @escaping @Sendable (String) -> Void = { SiriusLog.agents.error($0) }) {
         self.inner = inner
         self.report = report
@@ -24,11 +26,33 @@ public final class LoggingCommandQueue: CommandQueue, @unchecked Sendable {
         lock.withLock { logs[agent] = log }
     }
 
+    public func register(_ queue: AgentTurnQueue, for agent: String) {
+        lock.withLock { turnQueues[agent] = queue }
+    }
+
     public func unregister(agent: String) {
-        lock.withLock { _ = logs.removeValue(forKey: agent) }
+        lock.withLock {
+            logs[agent] = nil
+            turnQueues[agent] = nil
+        }
     }
 
     public func accept(_ command: Command) async -> Result<MethodResult, RPCError> {
+        if case .agentMessage(let peer) = command.call {
+            guard case .string(let id) = command.id, UUID(uuidString: id) != nil else {
+                return .failure(RPCError(.invalidParams, "Peer messages require a UUID request id"))
+            }
+            guard let queue = lock.withLock({ turnQueues[command.agent] }) else {
+                return .failure(RPCError(.notReady, "Agent is unavailable"))
+            }
+            do {
+                try await queue.send(Message(id: id.lowercased(), agent: command.agent, text: peer.text,
+                                             peerSender: peer.sender))
+                return .success(.delivered)
+            } catch {
+                return .failure(RPCError(.internalError, "Could not queue peer message: \(error)"))
+            }
+        }
         if let log = lock.withLock({ logs[command.agent] }) {
             do {
                 try await log.commandReceived(command)

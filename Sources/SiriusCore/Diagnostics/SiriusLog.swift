@@ -18,6 +18,8 @@ public struct SiriusLog: Sendable {
     public static let launch = SiriusLog("launch")
     public static let agents = SiriusLog("agents")
     public static let notifications = SiriusLog("notifications")
+    public static let toast = SiriusLog("toast")
+    public static let asides = SiriusLog("asides")
 
     public let category: String
     private let logger: Logger

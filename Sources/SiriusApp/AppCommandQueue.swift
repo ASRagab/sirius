@@ -7,6 +7,9 @@ final class AppCommandQueue: CommandQueue {
     private let toasts: ToastPresenter
     private let notifications: NotificationPresenter
     private let speech: SpeechPresenter
+    // Set once the agent host exists (main.swift): opens an aside for the
+    // agent on its brief.
+    @MainActor var openAside: (@MainActor (_ agent: String, _ brief: String, _ anchor: String?) async -> Result<MethodResult, RPCError>)?
 
     init(toasts: ToastPresenter, notifications: NotificationPresenter, speech: SpeechPresenter) {
         self.toasts = toasts
@@ -16,19 +19,30 @@ final class AppCommandQueue: CommandQueue {
 
     func accept(_ command: Command) async -> Result<MethodResult, RPCError> {
         switch command.call {
+        case .agentMessage:
+            return .failure(RPCError(.notReady, "No agent queue for peer delivery"))
         case .display(let params):
             switch params.kind {
             case .toast:
                 let text = ContentBlock.joinedText(params.content)
                 let alert = params.alert ?? false
+                let replace = params.replace ?? false
                 // The capacity check and the enqueue happen in one main-actor
                 // hop, so concurrent agents cannot overfill the queue.
-                let accepted = await toasts.enqueue(agent: command.agent, text: text, alert: alert)
+                let accepted = await toasts.enqueue(agent: command.agent, text: text, alert: alert, replace: replace)
                 return accepted
                     ? .success(.delivered)
                     : .failure(RPCError(.queueFull, "Queue full", data: ErrorData(method: .display)))
-            case .dialog, .aside:
-                // Validation rejects these with KIND_NOT_AVAILABLE before they get here.
+            case .aside:
+                // The agent's brief opens a window on a fork of its session
+                // (AsideController); the receipt goes back once the window
+                // is up, before the fork has said anything.
+                guard let openAside = await MainActor.run(body: { self.openAside }) else {
+                    return .failure(RPCError(.notReady, "Asides are not ready", data: ErrorData(method: .display)))
+                }
+                return await openAside(command.agent, ContentBlock.joinedText(params.content), params.anchor)
+            case .dialog:
+                // Validation rejects this with KIND_NOT_AVAILABLE before it gets here.
                 return .failure(RPCError(.kindNotAvailable, "Kind not available",
                                          data: ErrorData(method: .display, kind: params.kind.rawValue)))
             }

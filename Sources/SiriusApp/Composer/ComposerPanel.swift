@@ -10,10 +10,15 @@ import SwiftUI
 @MainActor
 final class ComposerPanel: NSPanel {
     var onSend: (() -> Void)?
+    var onSendAside: (() -> Void)?
     var onNextAgent: (() -> Void)?
     var onCancel: (() -> Void)?
     var onAttach: (([URL]) -> Void)?
     var onRemoveAttachment: ((URL) -> Void)?
+    var onRemoveContext: (() -> Void)?
+    // The context tile, first in the row when there is one.
+    private var context: ContextTile.Model?
+    private var attached: [URL] = []
     // The vertical padding scales with the text, 16/18 since it went to 16,
     // as the old padding was a bit much at the new size: text top 31 → 28,
     // the pill 28.78 → 26 off the bottom, the tiles 27 → 24. The box stays
@@ -141,6 +146,7 @@ final class ComposerPanel: NSPanel {
         textView.isEditable = true
         textView.selectedTextAttributes = [.backgroundColor: Palette.selection]
         textView.onSend = { [weak self] in self?.onSend?() }
+        textView.onSendAside = { [weak self] in self?.onSendAside?() }
         textView.onNextAgent = { [weak self] in self?.onNextAgent?() }
         textView.onCancel = { [weak self] in self?.onCancel?() }
         textView.onPasteFiles = { [weak self] urls in self?.onAttach?(urls) }
@@ -272,18 +278,36 @@ final class ComposerPanel: NSPanel {
     }
 
     func setAttachments(_ urls: [URL]) {
-        let shown = tiles.arrangedSubviews.compactMap { ($0 as? AttachmentTile)?.url }
-        guard shown != urls else { return }
+        guard attached != urls else { return }
+        attached = urls
+        rebuildTiles()
+    }
+
+    // What the app in front had open and selected, as one tile ahead of
+    // the files; nil takes it away.
+    func setContext(_ model: ContextTile.Model?) {
+        guard context != model else { return }
+        context = model
+        rebuildTiles()
+    }
+
+    private func rebuildTiles() {
         for view in tiles.arrangedSubviews { view.removeFromSuperview() }
-        for url in urls {
+        if let context {
+            let tile = ContextTile(context)
+            tile.onRemove = { [weak self] in self?.onRemoveContext?() }
+            tiles.addArrangedSubview(tile)
+        }
+        for url in attached {
             let tile = AttachmentTile(url: url)
             tile.onRemove = { [weak self] in self?.onRemoveAttachment?(url) }
             tiles.addArrangedSubview(tile)
         }
-        let grow = urls.isEmpty != tiles.isHidden
-        tiles.isHidden = urls.isEmpty
+        let empty = attached.isEmpty && context == nil
+        let grow = empty != tiles.isHidden
+        tiles.isHidden = empty
         // The text moves down to 10 below the tiles (.capture-files' margin).
-        textTop?.constant = urls.isEmpty ? Self.textTopInset : Self.tilesTop + Self.tilesHeight
+        textTop?.constant = empty ? Self.textTopInset : Self.tilesTop + Self.tilesHeight
         if grow { fitHeight() }
     }
 
@@ -573,13 +597,15 @@ final class ComposerScrollView: NSScrollView {
 }
 
 // Return sends and Shift-Return adds a line, as in chat apps; ⌘Return
-// sends too. ⌘/ or Shift-Tab (as in Claude Code) switches to the next agent;
+// sends the message as an aside, a window beside the work. ⌘/ or Shift-Tab (as in Claude Code) switches to the next agent;
 // Escape closes. A paste of
 // files or an image attaches them instead of inserting text. ⌫ or ⌘⌫ with
 // the caret at the start, nothing selected, removes the last attachment, as
 // in chat apps; with text before the caret they keep their usual meaning.
 final class ComposerTextView: NSTextView {
     var onSend: (() -> Void)?
+    // ⌘Return: the message opens an aside with the agent (AsideController).
+    var onSendAside: (() -> Void)?
     var onNextAgent: (() -> Void)?
     var onCancel: (() -> Void)?
     var onPasteFiles: (([URL]) -> Void)?
@@ -589,6 +615,29 @@ final class ComposerTextView: NSTextView {
     private var caretAtStart: Bool {
         let range = selectedRange()
         return range.location == 0 && range.length == 0 && !hasMarkedText()
+    }
+
+    // A typed -> becomes →. The arrow is its own undo step, so ⌘Z gives the
+    // literal -> back.
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        let typed = (string as? String) ?? (string as? NSAttributedString)?.string
+        let caret = selectedRange()
+        let text = self.string as NSString
+        guard typed == ">", replacementRange.location == NSNotFound, caret.length == 0,
+              !hasMarkedText(), caret.location > 0,
+              text.substring(with: NSRange(location: caret.location - 1, length: 1)) == "-" else {
+            return super.insertText(string, replacementRange: replacementRange)
+        }
+        super.insertText(string, replacementRange: replacementRange)
+        breakUndoCoalescing()
+        // Undo groups by event; close the keystroke's group so the arrow
+        // undoes on its own.
+        if let undo = undoManager, undo.groupsByEvent, undo.groupingLevel == 1 {
+            undo.endUndoGrouping()
+            undo.beginUndoGrouping()
+        }
+        super.insertText("→", replacementRange: NSRange(location: caret.location - 1, length: 2))
+        breakUndoCoalescing()
     }
 
     override func deleteBackward(_ sender: Any?) {
@@ -605,8 +654,10 @@ final class ComposerTextView: NSTextView {
         ComposerSignposts.firstKey()
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         switch (event.keyCode, flags) {
-        case (36, []), (36, [.command]), (76, []), (76, [.command]):
+        case (36, []), (76, []):
             onSend?()
+        case (36, [.command]), (76, [.command]):
+            onSendAside?()
         case (44, [.command]), (48, [.shift]):
             onNextAgent?()
         default:
@@ -653,21 +704,28 @@ final class ComposerTextView: NSTextView {
     }
 
     override func paste(_ sender: Any?) {
-        let pasteboard = NSPasteboard.general
+        let files = PastedFiles.read(.general)
+        if !files.isEmpty { return onPasteFiles?(files) ?? () }
+        pasteAsPlainText(sender)
+    }
+}
+
+// The files a paste carries: copied files as they are, and a copied image
+// (a screenshot on the clipboard) written out as a PNG. Empty when the
+// paste is text.
+@MainActor
+enum PastedFiles {
+    static func read(_ pasteboard: NSPasteboard) -> [URL] {
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
            !urls.isEmpty {
-            onPasteFiles?(urls)
-            return
+            return urls
         }
         if pasteboard.string(forType: .string) == nil, let image = NSImage(pasteboard: pasteboard),
            let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("sirius-paste-\(UUID().uuidString.prefix(8)).png")
-            if (try? png.write(to: url)) != nil {
-                onPasteFiles?([url])
-                return
-            }
+            if (try? png.write(to: url)) != nil { return [url] }
         }
-        pasteAsPlainText(sender)
+        return []
     }
 }

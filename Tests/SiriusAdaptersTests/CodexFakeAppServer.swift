@@ -6,8 +6,12 @@ import Foundation
 // turn's text picks the behaviour: FAKE_FAIL ends the turn failed, FAKE_EXIT
 // exits mid-turn, FAKE_HANG never ends it, FAKE_APPROVAL asks for a command
 // approval first, FAKE_HOLD keeps it running until a turn/steer whose text
-// has FAKE_DONE. A steer with no turn held is refused, as Codex does. A
-// thread/resume of "missing" is refused.
+// has FAKE_DONE, FAKE_SPEAK streams its answer as item/agentMessage/delta:
+// a commentary item ("thinking"), then "Hel", "lo" on one answer item and
+// "world" on a second. A steer with no turn held is refused, as Codex does.
+// A thread/resume of "missing" is refused. thread/fork answers
+// "fork-of-<threadId>"; it refuses "missing" always and "nofork" unless
+// ephemeral, which then answers "ephemeral-fork".
 //
 // `--version` prints "codex-cli 0.159.1", or the contents of
 // fake-codex.version beside the script. fake-codex.init beside it makes
@@ -61,6 +65,14 @@ enum CodexFakeAppServer {
                 send({"id": mid, "error": {"code": -32600, "message": "no rollout found"}})
             else:
                 send({"id": mid, "result": {"thread": {"id": params["threadId"]}}})
+        elif method == "thread/fork":
+            parent = params.get("threadId")
+            if parent == "missing" or (parent == "nofork" and not params.get("ephemeral")):
+                send({"id": mid, "error": {"code": -32600, "message": "no rollout found"}})
+            else:
+                fid = "ephemeral-fork" if params.get("ephemeral") else "fork-of-" + parent
+                send({"id": mid, "result": {"thread": {"id": fid}, "model": "fake-default",
+                                            "reasoningEffort": "medium"}})
         elif method == "turn/start":
             turns += 1
             tid = "turn-%d" % turns
@@ -77,6 +89,22 @@ enum CodexFakeAppServer {
             if "FAKE_APPROVAL" in text:
                 send({"id": 900, "method": "item/commandExecution/requestApproval", "params": {"threadId": params["threadId"], "turnId": tid}})
             send({"method": "turn/started", "params": {"threadId": params["threadId"], "turn": {"id": tid}}})
+            if "FAKE_SPEAK" in text:
+                th = params["threadId"]
+                def item(iid, phase=None):
+                    it = {"type": "agentMessage", "id": iid}
+                    if phase: it["phase"] = phase
+                    send({"method": "item/started", "params": {"threadId": th, "turnId": tid, "item": it}})
+                def delta(iid, d):
+                    send({"method": "item/agentMessage/delta", "params": {"threadId": th, "turnId": tid, "itemId": iid, "delta": d}})
+                item(tid + "-c", "commentary")
+                delta(tid + "-c", "thinking")
+                item(tid + "-a", "final_answer")
+                delta(tid + "-a", "Hel")
+                delta(tid + "-a", "")
+                delta(tid + "-a", "lo")
+                item(tid + "-b")
+                delta(tid + "-b", "world")
             if "FAKE_FAIL" in text:
                 send({"method": "turn/completed", "params": {"threadId": params["threadId"], "turn": {"id": tid, "status": "failed", "items": [], "error": {"message": "boom"}}}})
             else:

@@ -74,6 +74,26 @@ body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antial
 .gh:hover { background: rgba(255,255,255,.08); }
 
 
+/* The first screen waits on the sky top until the visitor continues; sky.js then pans down to the lockup. */
+.intro {
+  position: fixed; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 22px; padding: 0 16px 8vh; text-align: center; pointer-events: none;
+}
+.intro > * { opacity: 0; transform: translateY(4px); animation: intro-in 1.6s cubic-bezier(.2,.6,.2,1) forwards; pointer-events: auto; }
+.intro-line { font: 500 clamp(30px, 4.4vw, 44px)/1.15 "Cormorant Garamond", serif; letter-spacing: .08em; text-shadow: 0 0 18px rgba(181, 209, 255, 0.35); animation-delay: .9s; }
+.continue {
+  appearance: none; border: 0; background: none; cursor: pointer; padding: 10px 14px; border-radius: 999px;
+  font: 400 15px/20px -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif; letter-spacing: 0.02em;
+  color: rgba(200, 222, 255, 0.62); animation-delay: 1.9s; transition: color .25s ease;
+}
+.continue span { display: inline-block; transition: transform .25s ease; }
+.continue:hover, .continue:focus-visible { color: rgba(225, 238, 255, 0.95); }
+.continue:hover span, .continue:focus-visible span { transform: translateX(3px); }
+.continue:focus-visible { outline: 1px solid rgba(200, 222, 255, 0.4); outline-offset: 2px; }
+@keyframes intro-in { to { opacity: 1; transform: none; } }
+.going .intro { opacity: 0; transition: opacity .9s ease; }
+.going .intro > * { pointer-events: none; }
+
 .label {
   position: fixed; left: 0; top: 0; pointer-events: none;
   font: 400 11px/1 Inter, sans-serif; letter-spacing: .24em; text-transform: uppercase;
@@ -81,4 +101,7 @@ body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antial
 }
 .label.on { opacity: .9; }
 
-@media (prefers-reduced-motion: reduce) { .wordmark, .tagline, .download, .gh { transition: none; filter: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .wordmark, .tagline, .download, .gh, .going .intro { transition: none; filter: none; }
+  .intro > * { animation: none; opacity: 1; transform: none; }
+}

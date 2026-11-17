@@ -10,7 +10,7 @@ Last updated: `2026.10.13`. Built; this records the design decisions. The plan a
 - **Commands by default.** The main use is speaking to an agent, not dictating into text fields.
 - **⌃fn pastes at the cursor.** Hold ⌃ and `fn` together, in either order (⌃ may join within 0.3 s of `fn`), and the transcript is pasted into the frontmost app through ParrotCore's `CursorDelivery` (clipboard, ⌘V, clipboard restored after 0.25 s), or into the composer when it has focus. The chord is the hold key plus ⌃, or ⌃⇧ when the hold key is ⌃ (`HoldKey.pasteModifier`). This replaced the spoken "Dictate:" prefix, removed in 71b20e7. Sirius holds its own tap (`HoldMonitor`, matched in SiriusCore's `HoldGesture`) instead of ParrotCore's `HotkeyMonitor`, whose `Gesture` cancels every chord (8480aa7, 9c48e55).
 - **An agent's name addresses it.** Leading with "Claude, …" or "Codex, …" sends to that agent. The agent names go into the transcription prompt as vocabulary.
-- **No name, the composer's agent.** The agent selected in the composer, remembered across launches (`composer.lastAgent`), is the default until switched. A fixed default agent is the fallback if this keeps misrouting.
+- **No name, the composer's agent.** The agent selected in the composer, remembered across launches (`composer.last_agent`), is the default until switched. A fixed default agent is the fallback if this keeps misrouting.
 - **With the composer open, `fn` dictates into the composer** rather than sending, so attachments and edits can follow.
 - **`whisper-base.en`** (145 MB) downloads silently at launch, as Parrot does.
 - **A standalone pill where Parrot's sits, in Parrot's style.** The pill's exit has since been reworked in Sirius.
@@ -21,4 +21,4 @@ ParrotCore supplies capture (`AudioCapture`), transcription (`WhisperKitTranscri
 
 ## Permissions
 
-Accessibility (the `fn` tap and pasting) and Microphone. Neither prompt appears unannounced: onboarding's Permissions page explains both, each with its own Allow button.
+Accessibility (the `fn` tap and pasting) and Microphone. Neither prompt appears unannounced: the onboarding sheet lists both, each with its own Allow button.

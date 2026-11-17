@@ -2,6 +2,7 @@ import AppKit
 import ParrotCore
 import SiriusAdapters
 import SiriusCore
+import SiriusProtocol
 
 // The app's own socket, for the CLI and the live tests. Not a registered
 // agent: nothing runs behind it, and AgentHost skips a registration with this id.
@@ -12,6 +13,9 @@ let devAgent = "dev"
 // the app.
 // Prints the agent argv for scripts/compat-test.sh and exits.
 AgentArgsPreview.runIfRequested()
+// Settings saved under their old camelCase keys move to snake_case before
+// anything reads them.
+SettingsKeys.migrate(.standard)
 
 MainActor.assumeIsolated {
     // A menu-bar app: no Dock icon, no main window (LSUIElement in Info.plist).
@@ -19,7 +23,9 @@ MainActor.assumeIsolated {
     app.setActivationPolicy(.accessory)
     // Renders the onboarding's pages and exits, before anything else starts.
     OnboardingSnapshots.runIfRequested()
+    SettingsSnapshots.runIfRequested()
     ComposerSnapshots.runIfRequested()
+    AsideSnapshots.runIfRequested()
     LaunchSnapshots.runIfRequested()
     DictationSnapshots.runIfRequested()
     ToastSnapshots.runIfRequested()
@@ -72,7 +78,7 @@ MainActor.assumeIsolated {
         Task { @MainActor in _ = toasts.enqueue(agent: agent, text: text, alert: true) }
     })
     // With an agent registered, the agents start now; otherwise once the
-    // onboarding's agents step saves one (below).
+    // onboarding saves one (below).
     let registry = AgentRegistry(directory: AgentHost.registryDirectory())
     let agentsRegistered = !registry.loadAll().agents.isEmpty
     // The launch cue (LaunchCuePresenter) waits on the agents' warm start.
@@ -115,6 +121,10 @@ MainActor.assumeIsolated {
     // ⌘⇧J opens the composer.
     let composerTarget = HostComposerTarget(host: host)
     let composer = ComposerController(target: composerTarget)
+    // The handles an agent hands back to open an aside beside an item:
+    // given out with each message's context, resolved by the asides.
+    let anchors = AmbientAnchors()
+    composer.anchors = anchors
     DevDemo.openComposer = { composer.open() }
     // A shortcut that cannot be had says so and stays until clicked; the
     // menu's Compose still opens the composer.
@@ -126,6 +136,30 @@ MainActor.assumeIsolated {
     composer.registerShortcut()
     DevDemo.closeComposer = { composer.close() }
 
+    // Asides: ⌘Return in the composer opens one on what was typed, and an
+    // agent opens one with `display aside` (AsideController).
+    let asides = AsideController(host: host, anchors: anchors)
+    composer.onAside = { agent, text, attachments, context in
+        Task { @MainActor in
+            do {
+                try await asides.openAside(agent: agent, .user(text: text, attachments: attachments, context: context))
+            } catch {
+                _ = toasts.enqueue(agent: agent, text: "Couldn't open an aside", alert: true) // TODO(copy): copy
+            }
+        }
+        return true
+    }
+    queue.openAside = { agent, brief, anchor in
+        do {
+            try await asides.openAside(agent: agent, .agent(brief: brief, anchor: anchor))
+            return .success(.delivered)
+        } catch AsideController.Failure.tooMany {
+            return .failure(RPCError(.queueFull, "Too many asides open", data: ErrorData(method: .display)))
+        } catch {
+            return .failure(RPCError(.notReady, "No agent to open an aside with", data: ErrorData(method: .display)))
+        }
+    }
+
     // Hold fn anywhere to dictate (dictation.md): a command for an agent, or
     // into the composer while it is open. Hold ⌃fn to paste at the cursor
     // instead.
@@ -133,6 +167,7 @@ MainActor.assumeIsolated {
     let dictationAgents = DictationAgents(target: composerTarget)
     composer.onAgents = { dictationAgents.set($0) }
     let delivery = SiriusDelivery(composer: composer, target: composerTarget, agents: { dictationAgents.addresses })
+    delivery.anchors = anchors
     let dictation = DictationService(
         delivery: delivery,
         model: DictationModel(),
@@ -146,34 +181,26 @@ MainActor.assumeIsolated {
     launchCue.attach(dictation)
 
     // The onboarding opens by itself on first launch:
-    // no agent registered, or never been through. Saving its agents step
-    // starts them, or reloads them. "Settings…" opens it again.
-    let onboarding = OnboardingWindow(registry: registry, dictation: dictation,
-                                      shortcuts: .live(composer: composer, dictation: dictation),
-                                      onSave: { Task.detached { await host.reload() } },
-                                      selectAgent: { composer.select(agent: $0) })
-    // Its last page's guided first turn: the hold, the message (sent in a
-    // throwaway session with the first-turn instruction), the reply's
-    // toast, then the composer opening, which it dissolves behind.
-    dictation.onHold = { onboarding.dictationHold(began: $0) }
-    delivery.firstTurn = { text, agent in
-        guard onboarding.takesFirstTurn else { return false }
-        let name = dictationAgents.agents.first { $0.id == agent }?.name ?? agent
-        onboarding.firstTurnSending(text: text, agent: agent, name: name)
-        try await composerTarget.sendFirstTurn(text: text, to: agent)
-        return true
-    }
-    toasts.onToast = { onboarding.toastArrived(from: $0) }
-    composer.onOpen = { onboarding.composerOpened() }
+    // no agent registered, or never been through. Get Started writes the
+    // agents, starting them, or reloads them.
+    // The onboarding and Settings share one ShortcutsModel, so a shortcut
+    // changed in one shows in the other.
+    let shortcuts = ShortcutsModel.live(composer: composer, dictation: dictation)
+    let onboarding = OnboardingWindow(registry: registry, shortcuts: shortcuts,
+                                      onSave: { Task.detached { await host.reload() } })
+    // "Settings…": the Settings window (SettingsWindow), which writes each
+    // agent's change at once and reloads the host.
+    let settings = SettingsWindow(registry: registry, shortcuts: shortcuts,
+                                  onSave: { Task.detached { await host.reload() } })
     let onboardingShown = onboarding.showIfNeeded()
     // The pill on the sparkle while Sirius wakes, once the run loop is up;
     // not over the onboarding's own opening.
     DispatchQueue.main.async { launchCue.begin(onboardingShown: onboardingShown) }
     // A debug path for checking the window's system frame in the real app:
-    // `Sirius --show-setup` opens it at the agents step, as "Settings…".
+    // `Sirius --show-setup` opens it at the agents, as "Settings…".
     if CommandLine.arguments.contains("--show-setup") {
         DispatchQueue.main.async {
-            onboarding.show(at: .agents)
+            onboarding.show(agents: true)
             for window in app.windows where window.isVisible {
                 let layer = window.contentView?.layer
                 SiriusLog.app.info(String(format: "--show-setup: %@ styleMask=%lu opaque=%d shadow=%d radius=%.0f border=%.1f %@",
@@ -185,9 +212,10 @@ MainActor.assumeIsolated {
     }
 
     // NSApplication holds its delegate weakly; the local keeps it alive.
-    let delegate = AppDelegate(queue: queue, openOnboarding: { step in onboarding.show(at: step) },
+    let delegate = AppDelegate(queue: queue, openOnboarding: { onboarding.show(agents: $0) },
+                               openSettings: { settings.show() },
                                openComposer: { composer.open() }, composeShortcut: { composer.shortcut })
     app.delegate = delegate
     app.run()
-    withExtendedLifetime((termination, sigterm, composer, dictation, onboarding, launchCue)) {}
+    withExtendedLifetime((termination, sigterm, composer, dictation, onboarding, settings, launchCue, asides)) {}
 }

@@ -75,6 +75,7 @@ final class FixtureTests: XCTestCase {
         switch call {
         case .display(let params): try json(params)
         case .notify(let params): try json(params)
+        case .agentMessage(let params): try json(params)
         case .speak(let params): try json(params)
         }
     }

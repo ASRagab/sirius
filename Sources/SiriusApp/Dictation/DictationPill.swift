@@ -97,6 +97,16 @@ final class DictationPill: DictationObserver {
     // The launch cue's colour in the border: the toast's arrival ring
     // (SplashRing), at the capsule's shape, over the pill.
     private let ring = SplashRing(radius: DictationPill.height / 2, cornerCurve: .circular)
+    // Whether a window ordered in is on the Space the user is looking at;
+    // the tests stand in for the window server here.
+    var isOnActiveSpace: (NSWindow) -> Bool = { $0.isOnActiveSpace }
+    // How many panels the pill has built, for the tests.
+    private(set) var panelsBuilt = 0
+    // The displays have slept and woken since the panel was built: the next
+    // open gets a new one rather than risk a stranded window, as the toast
+    // does (ToastPresenter).
+    private var wokeSinceBuilt = false
+    private var wakeObserver: NSObjectProtocol?
 
     init(mark: NSImage?) {
         self.mark = mark
@@ -104,6 +114,15 @@ final class DictationPill: DictationObserver {
         // Build the panel now, not on the first press, so the first pill
         // appears as quickly as every later one.
         ensureWindow()
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.displaysWoke() }
+        }
+    }
+
+    func displaysWoke() {
+        wokeSinceBuilt = true
     }
 
     // A paste hold (⌃fn): a text-cursor glyph leads the bars, so the press
@@ -309,8 +328,8 @@ final class DictationPill: DictationObserver {
 
     // MARK: Launch
 
-    // How long the sparkle takes to come in from its blur: OnboardingIntro's
-    // reveal curve, shorter, as the pill springs in around it.
+    // How long the sparkle takes to come in from its blur: the former
+    // onboarding welcome's reveal, shorter, as the pill springs in around it.
     // TODO(copy): the launch cue is a first pass.
     nonisolated static let baseRevealDuration: TimeInterval = 0.7
     static var revealDuration: TimeInterval { baseRevealDuration * SpatialMotion.timeScale }
@@ -511,11 +530,8 @@ final class DictationPill: DictationObserver {
                 model.state = state
                 if state != .launch { model.fades = false }
             }
-            if !window.isVisible {
-                positionAtBottomCenter(window)
-                window.orderFrontRegardless()
-            }
-            postFrame(window)
+            if !window.isVisible { orderIn() }
+            if let window = self.window { postFrame(window) }
             // Only if nothing has hidden or shown the pill since: a hide in
             // the same turn would otherwise be undone, leaving the pill
             // stuck on screen.
@@ -553,7 +569,13 @@ final class DictationPill: DictationObserver {
                 // next open's first frame cannot show the old red sparkle.
                 var still = Transaction()
                 still.disablesAnimations = true
-                withTransaction(still) { self.model.fades = false }
+                // And back on the mark: left on .transcribing, the hidden
+                // pill's sparkle (a TimelineView) redraws every frame in an
+                // ordered-out window until the next dictation.
+                withTransaction(still) {
+                    self.model.fades = false
+                    self.model.state = .mark
+                }
             }
         }
         NotificationCenter.default.post(name: .dictationPillFrame, object: nil)
@@ -595,8 +617,42 @@ final class DictationPill: DictationObserver {
         shadowTimer = timer
     }
 
+    // Orders the pill in, on a panel the user can see. A panel built before
+    // a display sleep can be left a member of only some Spaces: ordered in
+    // over another app's full-screen Space it is on none the user is
+    // looking at, and every hold until a relaunch shows nothing (2026.10.26:
+    // the pill built at launch on 10.23 was on 2 of 6 Spaces, missing both
+    // of Chrome's full-screen ones, while the toast panel built that day was
+    // on all 6). A panel built afresh joins every Space.
+    private func orderIn() {
+        if wokeSinceBuilt { rebuildWindow("the displays woke since it was built", unexpected: false) }
+        guard let window else { return }
+        positionAtBottomCenter(window)
+        window.orderFrontRegardless()
+        guard !isOnActiveSpace(window) else { return }
+        rebuildWindow("it was ordered in on no Space the user is on", unexpected: true)
+        guard let fresh = self.window else { return }
+        positionAtBottomCenter(fresh)
+        fresh.orderFrontRegardless()
+        if !isOnActiveSpace(fresh) { SiriusLog.dictation.error("dictation pill still on no active Space after a rebuild") }
+    }
+
+    // Replaces the panel, ordered out, with a new one at the same alpha.
+    // The model and the ring move over with the content.
+    private func rebuildWindow(_ reason: String, unexpected: Bool) {
+        let line = "dictation pill panel rebuilt: \(reason)"
+        if unexpected { SiriusLog.dictation.error(line) } else { SiriusLog.dictation.info(line) }
+        let alpha = window?.alphaValue ?? 1
+        window?.close()
+        window = nil
+        ensureWindow()
+        window?.alphaValue = alpha
+    }
+
     private func ensureWindow() {
         if window != nil { return }
+        panelsBuilt += 1
+        wokeSinceBuilt = false
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: Self.panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -977,8 +1033,8 @@ private struct ProgressRow: View {
 }
 
 // The launch cue's sparkle: the menu bar's glyph in white, coming in from a
-// blur with a little scale and opacity, as the onboarding's lockup does
-// (OnboardingPages' lockup, OnboardingIntro's reveal).
+// blur with a little scale and opacity, as the former onboarding welcome's
+// lockup did.
 // TODO(copy): the launch cue is a first pass.
 private struct LaunchSparkle: View {
     let reveal: Double
@@ -1002,8 +1058,8 @@ private struct LaunchSparkle: View {
 // The launch cue's word, "Listening.", in the pill's
 // text: the progress label's font, size and colour, at its gap from what it
 // follows (ProgressRow). It comes in from a slight blur and rises a few
-// points to its place, as the onboarding's lockup does (OnboardingPages'
-// lockup); `reveal` 0 to 1.
+// points to its place, as the former onboarding welcome's lockup did;
+// `reveal` 0 to 1.
 // TODO(copy): the launch cue is a first pass.
 private struct LaunchWord: View {
     let reveal: Double

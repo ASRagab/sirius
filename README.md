@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="landing/assets/icon.svg" width="96" alt="Sirius">
+  <img src="docs/assets/icon.png" width="128" alt="Sirius">
 </p>
 
 # Sirius
@@ -14,11 +14,13 @@ Requires macOS 14+ on Apple Silicon. Sirius is signed and notarized, so the perm
 
 ## 2. First run
 
-A short setup walks you through three steps.
+Setup is one sheet.
 
-1. **Agents.** Sirius looks for `claude` and `codex` on your PATH, and for the copy of Codex inside ChatGPT.app. Pick a folder for each agent you want to use. That folder is where the agent works.
-2. **Permissions.** Allow the microphone, so Sirius can hear you while you hold `fn`, and Accessibility, so it can see the key and paste text. Each has its own Allow button; nothing is asked for unannounced. If Parrot is running, quit it so `fn` isn't handled twice.
-3. **Try it.** Hold `fn` and say, "Hello, what can you do?" Release, and your agent answers. Then press ⌘⇧J to open the composer and type instead.
+- **Shortcuts.** Hold `fn` to talk and ⌘⇧J to compose; click either to change it.
+- **Permissions.** Allow the microphone, so Sirius can hear you while you hold `fn`, and Accessibility, so it can see the key and paste text. Each has its own Allow button; nothing is asked for unannounced. If Parrot is running, quit it so `fn` isn't handled twice.
+- **Workspaces.** Sirius looks for `claude` and `codex` on your PATH, and for the copy of Codex inside ChatGPT.app. Each agent works in the folder its own CLI most recently used among those you already trust (Claude Code's trusted projects, Codex's trusted projects), and the sheet says so in one line. Change opens the list of agents; click one to pick another workspace. If neither has a trusted folder, the line's Choose opens the same list.
+
+Get Started is enabled once both permissions are allowed and an agent has a workspace. Then hold `fn` and say, "Hello, what can you do?", or press ⌘⇧J to type instead.
 
 Sirius needs Claude Code 2.1.71 or later and Codex 0.132.0 or later. If yours is older, a toast tells you to update it.
 

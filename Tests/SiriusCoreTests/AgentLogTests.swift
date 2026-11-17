@@ -29,6 +29,14 @@ final class AgentLogTests: XCTestCase {
         try String(contentsOf: storage.logURL, encoding: .utf8).split(separator: "\n").map(String.init)
     }
 
+    func testPendingPeerMessageRetainsItsSenderAfterRestart() async throws {
+        let peer = Message(id: "peer-id", agent: "claude", text: "approved", peerSender: "grok")
+        let log = try storage.openLog(now: fixed)
+        try await log.messageReceived(peer)
+        let reopened = try storage.openLog(now: fixed)
+        XCTAssertEqual(reopened.requeued.first?.message(agent: "claude"), peer)
+    }
+
     func testAppendAndReadBack() async throws {
         let log = try storage.openLog(now: fixed)
         let attachment = Message.Attachment(path: "/tmp/a.png", mimeType: "image/png")
@@ -60,6 +68,19 @@ final class AgentLogTests: XCTestCase {
             .turnEnded(message: "m_2", session: nil, outcome: .failed(reason: "exited 1")),
         ])
         XCTAssertTrue(contents.entries.allSatisfy { $0.version == 1 && $0.at.timeIntervalSince1970 >= 1_791_900_000 })
+    }
+
+    func testConsolidationsAreFiledAndReadBack() async throws {
+        let log = try storage.openLog(now: fixed)
+        try await log.consolidated(Consolidation(before: 131_204, after: 9702, milliseconds: 61_018))
+        try await log.consolidated(Consolidation(before: nil, after: nil, milliseconds: 0,
+                                                 outcome: .failed("claude exited")))
+        let lines = try lines()
+        XCTAssertEqual(lines[0], #"{"after":9702,"at":"2026-10-13T14:00:00.000Z","before":131204,"event":"consolidated","ms":61018,"outcome":"completed","v":1}"#)
+        XCTAssertEqual(try AgentLog.read(storage.logURL).entries.map(\.event), [
+            .consolidated(before: 131_204, after: 9702, milliseconds: 61_018, outcome: .completed),
+            .consolidated(before: nil, after: nil, milliseconds: 0, outcome: .failed(reason: "claude exited")),
+        ])
     }
 
     func testCommandsFiledAgainstCurrentThenMostRecentMessage() async throws {

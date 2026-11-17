@@ -35,6 +35,17 @@ final class ComposeMenuTests: XCTestCase {
         delegate.compose(item)
         wait(for: [opened], timeout: 1)
     }
+
+    // Settings… opens the Settings window, not the onboarding.
+    func testSettingsOpensTheSettingsWindow() {
+        var onboarding = 0
+        var settings = 0
+        let delegate = AppDelegate(queue: NoQueue(), openOnboarding: { _ in onboarding += 1 },
+                                   openSettings: { settings += 1 })
+        delegate.showSettings(nil)
+        XCTAssertEqual(settings, 1)
+        XCTAssertEqual(onboarding, 0)
+    }
 }
 
 private final class NoQueue: CommandQueue {

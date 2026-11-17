@@ -115,6 +115,37 @@ final class InstructionsTests: XCTestCase {
         XCTAssertEqual(try read("agent/workers.md"), "# Shared\ntools\n## Worker\n")
     }
 
+    func testSharedFilesAreRewrittenFromTheTemplateWhenTheyDiffer() throws {
+        try write("new rule", "t/toasts.md")
+        let templates = base.appendingPathComponent("t")
+        let agents = base.appendingPathComponent("agents")
+        XCTAssertTrue(try Instructions.refreshShared(into: agents, templates: templates))
+        XCTAssertEqual(try read("agents/toasts.md"), "new rule")
+        XCTAssertFalse(try Instructions.refreshShared(into: agents, templates: templates))
+
+        try write("old rule", "agents/toasts.md")
+        XCTAssertTrue(try Instructions.refreshShared(into: agents, templates: templates))
+        XCTAssertEqual(try read("agents/toasts.md"), "new rule")
+
+        // No template: the file stays.
+        XCTAssertFalse(try Instructions.refreshShared(into: agents, templates: base.appendingPathComponent("none")))
+        XCTAssertEqual(try read("agents/toasts.md"), "new rule")
+    }
+
+    // The toast rule is in the one shared file, which the template every
+    // agent and Codex worker is seeded from includes, and nowhere else.
+    func testTheShippedToastRuleIsOneSharedFileTheTemplateIncludes() throws {
+        let agent = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("packaging/agent", isDirectory: true)
+        let rule = try String(contentsOf: agent.appendingPathComponent("toasts.md"), encoding: .utf8)
+        XCTAssertTrue(rule.contains("under 140 characters"))
+        let template = try String(contentsOf: agent.appendingPathComponent("instructions.md"), encoding: .utf8)
+        XCTAssertTrue(template.contains("@~/.agents/toasts.md"))
+        XCTAssertFalse(template.contains("Keep toasts"))
+        XCTAssertEqual(Instructions.shared, ["toasts.md"])
+    }
+
     func testNoWorkersMdWithoutAWorkersFolder() throws {
         try write("{{tools}}", "t/instructions.md")
         XCTAssertTrue(try seed())

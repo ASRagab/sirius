@@ -63,6 +63,34 @@ final class ShortcutsTests: XCTestCase {
         XCTAssertEqual(HoldKey.allCases.map(\.glyph), ["fn", "right ⌥", "right ⌘", "⌃"])
     }
 
+    // A hold key saved under the camelCase key before the rename is moved
+    // to the snake_case one, and the old key is gone.
+    func testMigrationMovesTheOldHoldToTalkKey() {
+        defaults.set("right-command", forKey: "shortcut.holdToTalk")
+        SettingsKeys.migrate(defaults)
+        XCTAssertEqual(Shortcuts.holdKey, "shortcut.hold_to_talk")
+        XCTAssertEqual(Shortcuts.holdKey(in: defaults), .rightCommand)
+        XCTAssertNil(defaults.object(forKey: "shortcut.holdToTalk"))
+    }
+
+    // The composer's last agent likewise; a value already under the new key
+    // wins over a stale old one, and a second run changes nothing.
+    func testMigrationKeepsANewValueAndRunsOnce() {
+        defaults.set("codex", forKey: "composer.lastAgent")
+        SettingsKeys.migrate(defaults)
+        XCTAssertEqual(defaults.string(forKey: SettingsKeys.lastAgent), "codex")
+        XCTAssertNil(defaults.object(forKey: "composer.lastAgent"))
+
+        defaults.set("claude", forKey: "composer.lastAgent")
+        defaults.set("codex", forKey: SettingsKeys.lastAgent)
+        SettingsKeys.migrate(defaults)
+        XCTAssertEqual(defaults.string(forKey: SettingsKeys.lastAgent), "codex")
+        XCTAssertNil(defaults.object(forKey: "composer.lastAgent"))
+
+        SettingsKeys.migrate(defaults)
+        XCTAssertEqual(defaults.string(forKey: SettingsKeys.lastAgent), "codex")
+    }
+
     // The toast when the compose shortcut cannot be had names the user's own
     // shortcut, not the default.
     func testTakenMessageNamesTheShortcut() {

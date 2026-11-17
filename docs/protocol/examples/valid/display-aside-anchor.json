@@ -1,0 +1,28 @@
+{
+  "description": "An aside opened beside an item, by the anchor from a message's context",
+  "frame": {
+    "jsonrpc": "2.0",
+    "sirius": 1,
+    "id": "1",
+    "method": "display",
+    "params": {
+      "kind": "aside",
+      "content": "Explain why this paragraph reads as passive.",
+      "anchor": "k3f9x2m7qa"
+    }
+  },
+  "expect": {
+    "result": "display",
+    "id": "1",
+    "params": {
+      "anchor": "k3f9x2m7qa",
+      "content": [
+        {
+          "type": "text",
+          "text": "Explain why this paragraph reads as passive."
+        }
+      ],
+      "kind": "aside"
+    }
+  }
+}

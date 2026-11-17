@@ -38,12 +38,30 @@ public struct ToastQueue {
         case shown(Toast)
         // Waiting behind the current toast; the backlog count changed.
         case queued(backlog: Int)
+        // Took the place of the agent's toast on screen; shown with a fresh
+        // seq, so the old toast's timer finds it gone.
+        case replaced(Toast)
         case full
     }
 
-    public mutating func enqueue(agent: String, text: String, alert: Bool) -> EnqueueOutcome {
-        if current != nil && waiting.count >= capacity { return .full }
+    // With `replace`, the toast takes the place of the agent's own: the one on
+    // screen, else its latest one waiting. An alert is never replaced, nor
+    // another agent's toast; with nothing to replace it queues as usual.
+    public mutating func enqueue(agent: String, text: String, alert: Bool, replace: Bool = false) -> EnqueueOutcome {
         let toast = Toast(seq: nextSeq, agent: agent, text: text, alert: alert)
+        if replace {
+            if let shown = current, shown.agent == agent, !shown.alert {
+                nextSeq += 1
+                current = toast
+                return .replaced(toast)
+            }
+            if let index = waiting.lastIndex(where: { $0.agent == agent && !$0.alert }) {
+                nextSeq += 1
+                waiting[index] = toast
+                return .queued(backlog: waiting.count)
+            }
+        }
+        if current != nil && waiting.count >= capacity { return .full }
         nextSeq += 1
         if current == nil {
             current = toast

@@ -48,10 +48,10 @@ final class CodexLiveTests: XCTestCase {
     private func deliver(_ adapter: CodexAdapter, _ message: Message) async throws -> TurnEnd {
         let watchdog = Task {
             try await Task.sleep(nanoseconds: 180_000_000_000)
-            await adapter.stop()
+            await adapter.close()
         }
         defer { watchdog.cancel() }
-        return try await adapter.deliver(message)
+        return try await adapter.prompt(message)
     }
 
     func testLiveCodexToastsAndResumes() async throws {
@@ -76,24 +76,27 @@ final class CodexLiveTests: XCTestCase {
         // Turn 1, on a new thread.
         let first = CodexAdapter(registration: registration, socketPath: socket, helpersDirectory: Self.helpers)
         await first.observe { transcript.append($0) }
-        let session = try await first.start(session: nil).session
+        let session = try await first.open(SessionRequest()).session
         let thread = try XCTUnwrap(session)
         print("live: thread \(thread)")
         let end1 = try await deliver(first, Message(
             id: "m_live1", agent: "dev", text: "Please show me a toast saying \"T11 live check\"."))
         print("live: turn 1 \(end1)")
-        XCTAssertEqual(end1, TurnEnd(session: thread, outcome: .completed))
+        XCTAssertEqual(end1.session, thread)
+        XCTAssertEqual(end1.outcome, .completed)
+        // Codex names the model that ran the turn; which one depends on the account.
+        XCTAssertNotNil(end1.model)
         let calls1 = siriusCalls(transcript.all)
         for call in calls1 { print("live: turn 1 tool \(call.tool) \(call.status) \(call.arguments)") }
         XCTAssertTrue(calls1.contains { $0.tool == "display" && $0.status == "completed" && $0.arguments.contains("T11 live check") },
                       "no successful sirius display call")
-        await first.stop()
+        await first.close()
 
         // Turn 2, after a restart, on the resumed thread.
         let mark = transcript.all.count
         let second = CodexAdapter(registration: registration, socketPath: socket, helpersDirectory: Self.helpers)
         await second.observe { transcript.append($0) }
-        let resumed = try await second.start(session: thread).session
+        let resumed = try await second.open(SessionRequest(resume: thread)).session
         XCTAssertEqual(resumed, thread)
         let sent = transcript.all.dropFirst(mark).filter { $0.hasPrefix(">> ") }
         XCTAssertTrue(sent.contains { $0.contains("\"method\":\"thread/resume\"") && $0.contains(thread) },
@@ -102,9 +105,12 @@ final class CodexLiveTests: XCTestCase {
         let end2 = try await deliver(second, Message(
             id: "m_live2", agent: "dev", text: "What did I ask you a moment ago? Reply via toast."))
         print("live: turn 2 \(end2)")
-        XCTAssertEqual(end2, TurnEnd(session: thread, outcome: .completed))
+        XCTAssertEqual(end2.session, thread)
+        XCTAssertEqual(end2.outcome, .completed)
+        // Codex names the model that ran the turn; which one depends on the account.
+        XCTAssertNotNil(end2.model)
         let calls2 = siriusCalls(Array(transcript.all.dropFirst(mark)))
         for call in calls2 { print("live: turn 2 tool \(call.tool) \(call.status) \(call.arguments)") }
-        await second.stop()
+        await second.close()
     }
 }

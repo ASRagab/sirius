@@ -38,6 +38,9 @@ struct Display: ParsableCommand {
         discussion: """
             sirius display toast "Pushed the branch"
             sirius display toast --alert -- -1 test failed
+            sirius display toast --replace "Pushed; CI is green"
+            sirius display aside "Compare the two retry designs and recommend one"
+            sirius display aside --anchor k3f9x2m7qa "Explain why this paragraph reads as passive"
             echo '[{"type":"text","text":"done"}]' | sirius display toast --json
             """
     )
@@ -47,6 +50,12 @@ struct Display: ParsableCommand {
 
     @Flag(help: "toast only: stays until dismissed.")
     var alert = false
+
+    @Flag(help: "toast only: takes the place of this agent's toast instead of queueing behind it.")
+    var replace = false
+
+    @Option(help: "aside only: open beside an item, by the anchor on it in a message's <context>.")
+    var anchor: String?
 
     @Flag(help: "Read the content from stdin as JSON: a string or an array of content blocks.")
     var json = false
@@ -66,6 +75,8 @@ struct Display: ParsableCommand {
     func run() throws {
         var params: [String: JSONValue] = ["kind": .string(kind), "content": try content(text, json: json)]
         if alert { params["alert"] = .bool(true) }
+        if replace { params["replace"] = .bool(true) }
+        if let anchor { params["anchor"] = .string(anchor) }
         try send(.display, params)
     }
 }

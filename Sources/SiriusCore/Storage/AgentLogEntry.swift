@@ -12,6 +12,7 @@ import SiriusProtocol
 //   {"at":"…","event":"turn_ended","message":"m_7f3k2a9q","model":"claude-fable-5-1","outcome":"completed","session":"abc","v":1}
 //   {"at":"…","event":"turn_ended","message":"m_7f3k2a9q","outcome":"failed","reason":"exited 1","v":1}
 //   {"at":"…","event":"agent_turn","model":"claude-fable-5-1","outcome":"completed","session":"abc","v":1}
+//   {"at":"…","event":"consolidated","after":9702,"before":131204,"ms":61018,"outcome":"completed","v":1}
 //   {"at":"…","event":"interrupted","message":"m_7f3k2a9q","reason":"app restarted mid-turn","v":1}
 //   {"at":"…","event":"requeued","message":"m_7f3k2a9q","v":1}
 //
@@ -31,8 +32,10 @@ public struct AgentLogEntry: Equatable, Sendable {
     }
 
     public enum Event: Equatable, Sendable {
-        // The user sent a Message. The agent is implied by the file.
-        case message(id: String, text: String, attachments: [Message.Attachment])
+        // The user sent a Message. The agent is implied by the file. A peer's
+        // is agent_message, with its sender; Sirius's own is sirius_message.
+        case message(id: String, text: String, attachments: [Message.Attachment], peerSender: String? = nil,
+                     fromSirius: Bool = false)
         // The agent process is up. resumed: it carries on `session`; else a
         // new one. model and effort as far as the harness has said (see
         // AgentStart); milliseconds from launch to ready.
@@ -47,6 +50,9 @@ public struct AgentLogEntry: Equatable, Sendable {
         // A turn the agent started by itself (a background task finished).
         // It answers no message.
         case agentTurn(session: String?, outcome: TurnOutcome, model: String?)
+        // Sirius shrank the agent's context while it was idle (Consolidation):
+        // tokens before and after as far as the harness said, and how long.
+        case consolidated(before: Int?, after: Int?, milliseconds: Int, outcome: TurnOutcome)
         // A request from the agent, filed against its current message or the
         // most recent one; nil only when no turn has ever started.
         case command(message: String?, request: RequestId, method: SiriusProtocol.Method, params: CommandSummary)
@@ -59,12 +65,14 @@ public struct AgentLogEntry: Equatable, Sendable {
 
         public var name: String {
             switch self {
-            case .message: "message"
+            case .message(_, _, _, let sender, let fromSirius):
+                sender != nil ? "agent_message" : fromSirius ? "sirius_message" : "message"
             case .agentStarted: "agent_started"
             case .turnStarted: "turn_started"
             case .turnJoined: "turn_joined"
             case .turnEnded: "turn_ended"
             case .agentTurn: "agent_turn"
+            case .consolidated: "consolidated"
             case .command: "command"
             case .interrupted: "interrupted"
             case .requeued: "requeued"
@@ -73,10 +81,10 @@ public struct AgentLogEntry: Equatable, Sendable {
 
         public var message: String? {
             switch self {
-            case .message(let id, _, _): id
+            case .message(let id, _, _, _, _): id
             case .turnStarted(let message), .turnEnded(let message, _, _, _), .interrupted(let message, _),
                  .requeued(let message), .turnJoined(let message, _): message
-            case .agentStarted, .agentTurn: nil
+            case .agentStarted, .agentTurn, .consolidated: nil
             case .command(let message, _, _, _): message
             }
         }
@@ -143,6 +151,8 @@ public struct CommandSummary: Equatable, Sendable, Codable {
         case .notify(let params):
             title = params.title
             summarize(params.content)
+        case .agentMessage(let params):
+            setText(params.text)
         case .speak(let params):
             voice = params.voice
             setText(params.text)
@@ -172,7 +182,7 @@ public struct CommandSummary: Equatable, Sendable, Codable {
 extension AgentLogEntry: Codable {
     enum CodingKeys: String, CodingKey {
         case v, at, event, message, text, attachments, session, outcome, reason, request, method, params
-        case resumed, model, effort, ms, turn
+        case resumed, model, effort, ms, turn, before, after, sender
     }
 
     struct UnknownEvent: Error {}
@@ -184,12 +194,15 @@ extension AgentLogEntry: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decode(Int.self, forKey: .v)
         at = try Self.timestampStyle.parse(container.decode(String.self, forKey: .at))
-        switch try container.decode(String.self, forKey: .event) {
-        case "message":
+        let eventName = try container.decode(String.self, forKey: .event)
+        switch eventName {
+        case "message", "agent_message", "sirius_message":
             event = .message(id: try container.decode(String.self, forKey: .message),
                              text: try container.decode(String.self, forKey: .text),
                              attachments: try container.decodeIfPresent([Message.Attachment].self,
-                                                                        forKey: .attachments) ?? [])
+                                                                        forKey: .attachments) ?? [],
+                             peerSender: eventName == "agent_message" ? try container.decode(String.self, forKey: .sender) : nil,
+                             fromSirius: eventName == "sirius_message")
         case "agent_started":
             event = .agentStarted(session: try container.decodeIfPresent(String.self, forKey: .session),
                                   resumed: try container.decodeIfPresent(Bool.self, forKey: .resumed) ?? false,
@@ -216,6 +229,11 @@ extension AgentLogEntry: Codable {
             event = .agentTurn(session: try container.decodeIfPresent(String.self, forKey: .session),
                                outcome: try Self.decodeOutcome(container),
                                model: try container.decodeIfPresent(String.self, forKey: .model))
+        case "consolidated":
+            event = .consolidated(before: try container.decodeIfPresent(Int.self, forKey: .before),
+                                  after: try container.decodeIfPresent(Int.self, forKey: .after),
+                                  milliseconds: try container.decodeIfPresent(Int.self, forKey: .ms) ?? 0,
+                                  outcome: try Self.decodeOutcome(container))
         case "command":
             event = .command(message: try container.decodeIfPresent(String.self, forKey: .message),
                              request: try container.decode(RequestId.self, forKey: .request),
@@ -255,7 +273,8 @@ extension AgentLogEntry: Codable {
         try container.encode(at.formatted(Self.timestampStyle), forKey: .at)
         try container.encode(event.name, forKey: .event)
         switch event {
-        case .message(let id, let text, let attachments):
+        case .message(let id, let text, let attachments, let sender, _):
+            try container.encodeIfPresent(sender, forKey: .sender)
             try container.encode(id, forKey: .message)
             try container.encode(text, forKey: .text)
             try container.encode(attachments, forKey: .attachments)
@@ -284,6 +303,11 @@ extension AgentLogEntry: Codable {
         case .agentTurn(let session, let outcome, let model):
             try container.encodeIfPresent(session, forKey: .session)
             try container.encodeIfPresent(model, forKey: .model)
+            try Self.encode(outcome, into: &container)
+        case .consolidated(let before, let after, let milliseconds, let outcome):
+            try container.encodeIfPresent(before, forKey: .before)
+            try container.encodeIfPresent(after, forKey: .after)
+            try container.encode(milliseconds, forKey: .ms)
             try Self.encode(outcome, into: &container)
         case .command(let message, let request, let method, let params):
             try container.encodeIfPresent(message, forKey: .message)

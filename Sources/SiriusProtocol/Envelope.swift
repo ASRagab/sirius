@@ -28,6 +28,7 @@ public enum RequestId: Hashable, Sendable, Codable {
 
 public enum Method: String, CaseIterable, Sendable, Codable {
     case display, notify, speak
+    case agentMessage = "agent_message"
 }
 
 // Open, not an enum: a helper must read a code it does not know as a

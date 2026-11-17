@@ -1,6 +1,7 @@
 import AppKit
 import ParrotCore
 import SiriusCore
+import SiriusProtocol
 
 // The agents dictation can address, as the composer's target last listed
 // them. Read again at each press and each composer open, so an agent
@@ -52,10 +53,12 @@ final class SiriusDelivery: TranscriptDelivery {
     // the next hold is released takes that hold's mode, as the surface
     // takes that hold's route.
     var mode: DictationMode = .agent
-    // The onboarding's guided first turn: given a message for an agent, it
-    // sends it in the first turn's throwaway session and returns true, or
-    // returns false and the message goes the usual way.
-    var firstTurn: (@MainActor (_ text: String, _ agent: String) async throws -> Bool)?
+    // Reads the app in front, as the composer does at each open. Replaced
+    // in tests.
+    var anchors: AmbientAnchors?
+    var readContext: (_ pid: Int32, _ bundleID: String) async -> AmbientSnapshot? = { pid, bundleID in
+        await AmbientContextSource().context(frontPID: pid, bundleID: bundleID)
+    }
 
     init(composer: ComposerController, target: ComposerTarget,
          agents: @escaping @MainActor () -> [DictationAddress]) {
@@ -91,8 +94,8 @@ final class SiriusDelivery: TranscriptDelivery {
         case .agent(let agent, let body):
             SiriusLog.dictation.info("dictation: \(body.count) chars to \(agent)")
             do {
-                if let firstTurn, try await firstTurn(body, agent) { return }
-                try await target.send(text: body, attachments: [], to: agent)
+                let context = await frontContext()
+                try await target.send(text: body, attachments: [], context: context, to: agent)
             } catch {
                 SiriusLog.dictation.error("dictation: send to \(agent) failed: \(error)")
                 NSSound.beep()
@@ -101,5 +104,23 @@ final class SiriusDelivery: TranscriptDelivery {
         case .nothing:
             SiriusLog.dictation.info("dictation: nothing to deliver")
         }
+    }
+
+    // What the app in front has open and selected as the transcript
+    // arrives, to go with a spoken message as it goes with a typed one.
+    // Read after the transcription, not at the press: the app in front then
+    // is the one asked. Nil when the setting is off, Sirius is in front, or
+    // the app does not answer in time.
+    private func frontContext() async -> Message.Context? {
+        guard SettingsKeys.ambientContextEnabled(in: .standard),
+              let front = NSWorkspace.shared.frontmostApplication, front != .current,
+              let bundleID = front.bundleIdentifier
+        else { return nil }
+        let snapshot = await readContext(front.processIdentifier, bundleID)
+        let context = snapshot?.messageContext(anchors: anchors)
+        // Counts only: what was selected is never logged.
+        let via = snapshot?.helper.map { " via helper \($0)" } ?? ""
+        SiriusLog.dictation.info("dictation: context from \(bundleID)\(via): \(context?.items.count ?? 0) items")
+        return context
     }
 }

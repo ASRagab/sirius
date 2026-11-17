@@ -37,6 +37,19 @@
 	<!-- Dictation: hold fn and speak (dictation.md). Asked for only from the Allow button in setup, never unannounced. TODO(copy): the copy macOS shows in the microphone prompt. -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Sirius listens while you hold fn, to send what you say to your agents or type it at the cursor.</string>
+	<!-- Agents' tools (ical, contacts, osascript) run as Sirius's children, so macOS asks on Sirius's behalf. Never asked for in setup: each prompt appears the first time the user asks an agent for something that needs it. -->
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Your agents read and add calendar events when you ask them to.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Your agents read and add calendar events when you ask them to.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Your agents read and add reminders when you ask them to.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Your agents read and add reminders when you ask them to.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Your agents look up contacts when you ask them to message or meet someone.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Your agents control apps like Music when you ask them to.</string>
 	<!-- In-app updates, as Parrot's. The appcast is a GitHub release asset, written by scripts/make-release.sh; latest/download always serves the newest release's. -->
 	<key>SUEnableAutomaticChecks</key>
 	<true/>

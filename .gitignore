@@ -12,3 +12,5 @@ dist/
 # Rendered locally; not part of the repo.
 .journal/
 .tasks/
+# Internal docs: local only, never committed.
+docs/.internal/

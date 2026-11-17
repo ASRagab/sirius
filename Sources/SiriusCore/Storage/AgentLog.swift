@@ -62,8 +62,10 @@ public actor AgentLog {
         var bodies: [String: RequeuedMessage] = [:]
         for entry in Self.decode(existing).entries {
             state.apply(entry.event)
-            if case .message(let id, let text, let attachments) = entry.event, bodies[id] == nil {
-                bodies[id] = RequeuedMessage(id: id, text: text, attachments: attachments)
+            if case .message(let id, let text, let attachments, let sender, let fromSirius) = entry.event,
+               bodies[id] == nil {
+                bodies[id] = RequeuedMessage(id: id, text: text, attachments: attachments, peerSender: sender,
+                                             fromSirius: fromSirius)
             }
         }
 
@@ -126,7 +128,8 @@ public actor AgentLog {
 
     public func messageReceived(_ message: Message) throws {
         guard state.status[message.id] == nil else { throw AgentLogError.duplicateMessage(message.id) }
-        try write(.message(id: message.id, text: message.text, attachments: message.attachments))
+        try write(.message(id: message.id, text: message.text, attachments: message.attachments,
+                           peerSender: message.peerSender, fromSirius: message.fromSirius))
     }
 
     public func turnStarted(message: String) throws {
@@ -164,6 +167,12 @@ public actor AgentLog {
 
     public func agentTurn(_ end: TurnEnd) throws {
         try write(.agentTurn(session: end.session, outcome: AgentLogEntry.TurnOutcome(end.outcome), model: end.model))
+    }
+
+    public func consolidated(_ consolidation: Consolidation) throws {
+        try write(.consolidated(before: consolidation.before, after: consolidation.after,
+                                milliseconds: consolidation.milliseconds,
+                                outcome: AgentLogEntry.TurnOutcome(consolidation.outcome)))
     }
 
     public func turnEnded(message: String, _ end: TurnEnd) throws {
@@ -214,14 +223,21 @@ public struct RequeuedMessage: Equatable, Sendable {
     public var text: String
     public var attachments: [Message.Attachment]
 
-    public init(id: String, text: String, attachments: [Message.Attachment] = []) {
+    public var peerSender: String?
+    public var fromSirius: Bool
+
+    public init(id: String, text: String, attachments: [Message.Attachment] = [], peerSender: String? = nil,
+                fromSirius: Bool = false) {
         self.id = id
         self.text = text
         self.attachments = attachments
+        self.peerSender = peerSender
+        self.fromSirius = fromSirius
     }
 
     public func message(agent: String) -> Message {
-        Message(id: id, agent: agent, text: text, attachments: attachments)
+        Message(id: id, agent: agent, text: text, attachments: attachments, peerSender: peerSender,
+                fromSirius: fromSirius)
     }
 }
 
@@ -242,7 +258,7 @@ struct AgentLogState: Sendable {
 
     mutating func apply(_ event: AgentLogEntry.Event) {
         switch event {
-        case .message(let id, _, _):
+        case .message(let id, _, _, _, _):
             if status[id] == nil {
                 status[id] = .pending
                 order.append(id)
@@ -258,7 +274,7 @@ struct AgentLogState: Sendable {
             status[message] = .finished
             if current == message { current = nil }
             joined.removeAll { $0 == message }
-        case .requeued, .command, .agentStarted, .agentTurn:
+        case .requeued, .command, .agentStarted, .agentTurn, .consolidated:
             // A re-queued message stays pending until its turn starts.
             break
         }

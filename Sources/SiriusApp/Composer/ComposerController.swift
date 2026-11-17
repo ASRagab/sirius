@@ -15,12 +15,18 @@ struct ComposerAgent: Equatable, Sendable {
 @MainActor
 protocol ComposerTarget: AnyObject {
     func composerAgents() async -> [ComposerAgent]
-    func send(text: String, attachments: [URL], to agent: String) async throws
+    func send(text: String, attachments: [URL], context: Message.Context?, to agent: String) async throws
+}
+
+extension ComposerTarget {
+    func send(text: String, attachments: [URL], to agent: String) async throws {
+        try await send(text: text, attachments: attachments, context: nil, to: agent)
+    }
 }
 
 // ⌘⇧J opens the composer; sending closes it, and the
 // agent answers with a toast. The current agent is remembered across launches.
-// The shortcut can be rebound from the onboarding's last page (rebind),
+// The shortcut can be rebound from the onboarding sheet (rebind),
 // and is stored in UserDefaults (Shortcuts.composeKey).
 @MainActor
 final class ComposerController {
@@ -33,6 +39,27 @@ final class ComposerController {
     private var agents: [ComposerAgent] = []
     private var attachments: [URL] = []
     private var sending = false
+    // Opens an aside with the agent on this text and these files; false
+    // when it could not.
+    var onAside: ((_ agent: String, _ text: String, _ attachments: [URL], _ context: AmbientSnapshot?) -> Bool)?
+    // What the app in front had open and selected when the composer
+    // opened. The send reads that app again and sends the fresh answer,
+    // or this copy when the reread fails (AmbientSendRead). Nothing in the
+    // composer shows it for now; ContextTile is the tile it had, kept until
+    // that is decided.
+    private var ambient = AmbientAttachment()
+    // The app the opening read, which the send reads again: the app behind
+    // the composer, never Sirius. Nil when context is off, the user removed
+    // it, or no app was behind.
+    private var contextSource: (pid: Int32, bundleID: String)?
+    // Gives each item pointed at a handle its agent can open an aside
+    // beside (main.swift shares one table with the asides).
+    var anchors: AmbientAnchors?
+    // Reads the app in front: its process and bundle id in, its context or
+    // nil out. Replaced in tests.
+    var readContext: (_ pid: Int32, _ bundleID: String) async -> AmbientSnapshot? = { pid, bundleID in
+        await AmbientContextSource().context(frontPID: pid, bundleID: bundleID)
+    }
     // Sent text still showing as the panel closes; cleared once it has gone,
     // or at once if the composer reopens first.
     private var sent = false
@@ -43,7 +70,7 @@ final class ComposerController {
     // host that lacks it never replaces it. Each load used to put the first
     // listed agent in place of a choice the list lacked, and store it, so
     // Codex's sends went to Claude (2026.10.11).
-    private static let lastAgentKey = "composer.lastAgent"
+    private static let lastAgentKey = SettingsKeys.lastAgent
     private var selection = AgentSelection(chosen: UserDefaults.standard.string(forKey: lastAgentKey))
     private var current: String? { selection.current }
 
@@ -67,18 +94,23 @@ final class ComposerController {
     // The waves at the composer's bottom centre, which a hold of fn with the
     // composer open drives in place of the pill (DictationService).
     var dictationWaves: DictationWavesModel { panel.waves }
-    // Told once the composer has opened, by its shortcut or otherwise: the
-    // onboarding's last page dissolves behind it.
-    var onOpen: (() -> Void)?
 
     init(target: ComposerTarget, defaults: UserDefaults = .standard) {
         self.target = target
         self.defaults = defaults
         shortcut = Shortcuts.compose(in: defaults)
         panel.onSend = { [weak self] in self?.send() }
+        panel.onSendAside = { [weak self] in self?.sendAside() }
         panel.onNextAgent = { [weak self] in self?.nextAgent() }
         panel.onCancel = { [weak self] in self?.close() }
         panel.onAttach = { [weak self] urls in self?.attach(urls) }
+        panel.onRemoveContext = { [weak self] in
+            guard let self else { return }
+            self.ambient.clear()
+            self.contextSource = nil
+            self.panel.setContext(nil)
+            SiriusLog.composer.info("context removed")
+        }
         panel.onRemoveAttachment = { [weak self] url in
             guard let self else { return }
             self.attachments.removeAll { $0 == url }
@@ -176,6 +208,7 @@ final class ComposerController {
         if front != .current { previous = front }
         refreshAgent()
         panel.present()
+        loadContext(from: front)
         ComposerSignposts.event("focused")
         // Whether typing reaches it: a panel on screen but not key leaves
         // the keys with the app behind.
@@ -184,8 +217,30 @@ final class ComposerController {
         } else {
             SiriusLog.composer.error("composer opened but is not key; typing goes to \(front?.bundleIdentifier ?? "the app behind")")
         }
-        onOpen?()
         Task { await loadAgents() }
+    }
+
+    // Asks the app that was in front what is open and selected, once per
+    // opening and after the panel is up, so it never delays typing. Only
+    // that app is asked, here and again at send (rereadContext). The answer
+    // is dropped if the composer has closed, sent or been reopened since.
+    private func loadContext(from front: NSRunningApplication?) {
+        let ticket = ambient.begin()
+        contextSource = nil
+        panel.setContext(nil)
+        guard SettingsKeys.ambientContextEnabled(in: defaults), let front, front != .current,
+              let bundleID = front.bundleIdentifier
+        else { return ambient.clear() }
+        let pid = front.processIdentifier
+        contextSource = (pid, bundleID)
+        let read = readContext
+        Task { [weak self] in
+            let answer = await read(pid, bundleID)
+            guard let self, self.ambient.accept(answer, ticket: ticket), let answer else { return }
+            // Ids and counts only: what was selected is never logged.
+            let via = answer.helper.map { " via helper \($0)" } ?? ""
+            SiriusLog.composer.info("context from \(bundleID)\(via): \(answer.count) items")
+        }
     }
 
     // Selects `agent`, as the user's own switch would, and keeps it.
@@ -210,12 +265,20 @@ final class ComposerController {
         if before.0 != agents || before.1 != current { refreshAgent() }
     }
 
-    func close(then gone: @escaping () -> Void = {}) {
+    // `restore` false leaves focus where it is: an aside's window has just
+    // taken it.
+    func close(restore: Bool = true, then gone: @escaping () -> Void = {}) {
         let previous = previous
         self.previous = nil
+        // A read still on its way is no longer wanted; what is held stays
+        // for the send that is closing the panel.
+        if !sent {
+            ambient.clear()
+            contextSource = nil
+        }
         panel.dismiss {
             // Only if Sirius still has focus; the user may have clicked elsewhere.
-            if NSApp.isActive { previous?.activate() }
+            if restore, NSApp.isActive { previous?.activate() }
             gone()
         }
     }
@@ -235,6 +298,9 @@ final class ComposerController {
         panel.textView.string = ""
         attachments = []
         panel.setAttachments([])
+        ambient.clear()
+        contextSource = nil
+        panel.setContext(nil)
     }
 
     // An agent the list lacks still shows, by its id: sends go to it and
@@ -266,10 +332,16 @@ final class ComposerController {
         guard let agent = current else { return NSSound.beep() }
         sending = true
         let files = attachments
+        let held = ambient.snapshot
+        // An opening read that has not answered yet is not waited for and
+        // will not be accepted after this; the reread below replaces it.
+        if held == nil { ambient.clear() }
+        let reread = rereadContext()
         Task {
             defer { sending = false }
+            let context = await sendContext(held: held, reread: reread)?.messageContext(anchors: anchors)
             do {
-                try await target.send(text: text, attachments: files, to: agent)
+                try await target.send(text: text, attachments: files, context: context, to: agent)
                 // The text stays in the field while it closes, and clears once
                 // it has gone, so the send reads as one motion.
                 sent = true
@@ -281,5 +353,52 @@ final class ComposerController {
             }
         }
     }
-}
 
+    // ⌘Return: what is typed opens an aside with the selected agent in
+    // place of a message to it. Without an opener (no host), or when the
+    // aside cannot open, it beeps and the text stays.
+    private func sendAside() {
+        let text = panel.textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sending, !text.isEmpty || !attachments.isEmpty else { return }
+        guard let agent = current, let onAside else { return NSSound.beep() }
+        sending = true
+        let files = attachments
+        let held = ambient.snapshot
+        if held == nil { ambient.clear() }
+        let reread = rereadContext()
+        Task {
+            defer { sending = false }
+            let context = await sendContext(held: held, reread: reread)
+            guard onAside(agent, text, files, context) else { return NSSound.beep() }
+            sent = true
+            close(restore: false) { [weak self] in self?.clearSent() }
+        }
+    }
+
+    // The read a send makes of the app the opening read: that app, not
+    // Sirius, which is in front while the composer has the keys. Nil when
+    // there is nothing to read again.
+    private func rereadContext() -> (@Sendable () async -> AmbientSnapshot?)? {
+        guard let source = contextSource, SettingsKeys.ambientContextEnabled(in: defaults) else { return nil }
+        let read = readContext
+        return { await read(source.pid, source.bundleID) }
+    }
+
+    // The context a send carries: the reread's answer, or the copy from the
+    // opening when the reread fails or is slow (issue 0010).
+    private func sendContext(
+        held: AmbientSnapshot?, reread: (@Sendable () async -> AmbientSnapshot?)?
+    ) async -> AmbientSnapshot? {
+        guard let reread else { return held }
+        let started = ContinuousClock.now
+        let fresh = await AmbientSendRead.resolve(held: nil, read: reread)
+        let elapsed = ContinuousClock.now - started
+        // Ids and counts only: what was selected is never logged.
+        if let fresh {
+            SiriusLog.composer.info("context reread at send: \(fresh.count) items in \(elapsed)")
+            return fresh
+        }
+        SiriusLog.composer.info("context reread at send gave nothing after \(elapsed); sending the copy from the opening")
+        return held
+    }
+}

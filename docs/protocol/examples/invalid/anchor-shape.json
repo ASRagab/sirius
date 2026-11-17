@@ -1,0 +1,22 @@
+{
+  "description": "an anchor is Sirius's handle, not an item's id",
+  "frame": {
+    "jsonrpc": "2.0",
+    "sirius": 1,
+    "id": "1",
+    "method": "display",
+    "params": {
+      "kind": "aside",
+      "content": "hi",
+      "anchor": "sel-23"
+    }
+  },
+  "expect": {
+    "error": -32602,
+    "id": "1",
+    "data": {
+      "kind": "aside",
+      "method": "display"
+    }
+  }
+}
