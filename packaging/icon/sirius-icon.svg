@@ -1,19 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- Sirius app icon. Tile, gradient, corner radius and shadow follow the macOS 1024 template and the first icon (c21a6bb). Candidate B: the first icon's star scaled to 392 px, steel blue rgb(181,209,255) with a near-white core, with only the four tip rounds made slightly pointed. Regenerate the PNGs and AppIcon.icns with scripts/make-icon.sh. -->
-  <defs>
-    <linearGradient id="bg" x1="0" y1="100" x2="0" y2="924" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#030409"/><stop offset="0.55" stop-color="#050610"/><stop offset="0.6" stop-color="#050711"/><stop offset="0.65" stop-color="#070915"/><stop offset="0.7" stop-color="#090C1A"/><stop offset="0.75" stop-color="#0B1021"/><stop offset="0.8" stop-color="#0E1428"/><stop offset="0.85" stop-color="#111931"/><stop offset="0.9" stop-color="#151F3A"/><stop offset="0.95" stop-color="#182544"/><stop offset="1" stop-color="#1D2C4F"/>
-    </linearGradient>
-    <radialGradient id="core" cx="512" cy="502" r="196.0" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#F2F7FF"/><stop offset="0.05" stop-color="#F2F7FF"/><stop offset="0.16" stop-color="#DCE9FF"/><stop offset="0.36" stop-color="#B5D1FF"/><stop offset="1" stop-color="#B5D1FF"/>
-    </radialGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="21"/></filter>
-    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="23.5"/></filter>
-    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="185.4"/></clipPath>
-    <path id="star" d="M707.58 503.82A4.14 4.14 0 0 0 707.58 500.18A24.51 24.51 0 0 0 688.70 486.64C563.28 470.41 543.59 450.72 527.36 325.30A24.51 24.51 0 0 0 513.82 306.42A4.14 4.14 0 0 0 510.18 306.42A24.51 24.51 0 0 0 496.64 325.30C480.41 450.72 460.72 470.41 335.30 486.64A24.51 24.51 0 0 0 316.42 500.18A4.14 4.14 0 0 0 316.42 503.82A24.51 24.51 0 0 0 335.30 517.36C460.72 533.59 480.41 553.28 496.64 678.70A24.51 24.51 0 0 0 510.18 697.58A4.14 4.14 0 0 0 513.82 697.58A24.51 24.51 0 0 0 527.36 678.70C543.59 553.28 563.28 533.59 688.70 517.36A24.51 24.51 0 0 0 707.58 503.82Z"/>
-  </defs>
-  <rect x="100" y="111" width="824" height="824" rx="185.4" fill="#000" opacity="0.45" filter="url(#shadow)"/>
-  <rect x="100" y="100" width="824" height="824" rx="185.4" fill="url(#bg)"/>
-  <g clip-path="url(#tile)"><use href="#star" fill="#B5D1FF" opacity="0.38" filter="url(#glow)"/></g>
-  <use href="#star" fill="url(#core)"/>
+  <!-- Sirius app icon: the star in steel blue on one flat dark color, in the macOS 1024 template's tile (824 px, corner radius 185.4). No gradient, glow or shadow. Regenerate AppIcon.icns and the 1024 PNG with scripts/make-icon.sh. -->
+  <rect x="100" y="100" width="824" height="824" rx="185.4" fill="#030409"/>
+  <path transform="translate(512 512) scale(1.046) translate(-512 -502)" fill="#B5D1FF" d="M707.58 503.82A4.14 4.14 0 0 0 707.58 500.18A24.51 24.51 0 0 0 688.70 486.64C563.28 470.41 543.59 450.72 527.36 325.30A24.51 24.51 0 0 0 513.82 306.42A4.14 4.14 0 0 0 510.18 306.42A24.51 24.51 0 0 0 496.64 325.30C480.41 450.72 460.72 470.41 335.30 486.64A24.51 24.51 0 0 0 316.42 500.18A4.14 4.14 0 0 0 316.42 503.82A24.51 24.51 0 0 0 335.30 517.36C460.72 533.59 480.41 553.28 496.64 678.70A24.51 24.51 0 0 0 510.18 697.58A4.14 4.14 0 0 0 513.82 697.58A24.51 24.51 0 0 0 527.36 678.70C543.59 553.28 563.28 533.59 688.70 517.36A24.51 24.51 0 0 0 707.58 503.82Z"/>
 </svg>

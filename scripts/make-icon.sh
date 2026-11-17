@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Renders the app icon from its master, packaging/icon/sirius-icon.svg.
+# Renders the app icon from its master, packaging/icon/sirius-icon.svg, and
+# the README's from packaging/icon/sirius-readme-icon.svg: the same star and
+# colors on a full square, without the app icon's tile.
 #   scripts/make-icon.sh
 # writes
 #   packaging/AppIcon.icns              every standard iconset size, via iconutil
@@ -15,8 +17,10 @@ cd "$(dirname "$0")/.."
 SVG=packaging/icon/sirius-icon.svg
 RESVG=(npx --yes @resvg/resvg-js-cli@2.6.2-beta.1)
 
-render() {   # render <px> <out.png>
-    "${RESVG[@]}" --fit-width "$1" "$SVG" "$2" >/dev/null
+README_SVG=packaging/icon/sirius-readme-icon.svg
+
+render() {   # render <px> <out.png> [svg]
+    "${RESVG[@]}" --fit-width "$1" "${3:-$SVG}" "$2" >/dev/null
 }
 
 work=$(mktemp -d)
@@ -31,5 +35,5 @@ iconutil -c icns -o packaging/AppIcon.icns "$set"
 
 render 1024 packaging/icon/sirius-icon-1024.png
 mkdir -p docs/assets
-render 256 docs/assets/icon.png
+render 256 docs/assets/icon.png "$README_SVG"
 echo "wrote packaging/AppIcon.icns, packaging/icon/sirius-icon-1024.png, docs/assets/icon.png"
