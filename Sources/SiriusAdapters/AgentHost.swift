@@ -437,12 +437,15 @@ public actor AgentHost {
                      to agent: String) async throws -> String {
         guard let hosted = hosted[agent] else { throw AgentHostError.unknownAgent(agent) }
         let id = MessageID.make()
-        var copied: [Message.Attachment] = []
-        for source in attachments {
-            copied.append(try hosted.storage.addAttachment(copying: source, to: id,
-                                                           mimeType: Self.mimeType(of: source)))
+        let copied = try hosted.storage.addAttachments(copying: attachments, to: id, mimeType: Self.mimeType(of:))
+        do {
+            try await hosted.queue.send(Message(id: id, agent: agent, text: text, attachments: copied,
+                                                context: context))
+        } catch {
+            // Never logged, so nothing points at its attachments.
+            hosted.storage.removeAttachments(of: id)
+            throw error
         }
-        try await hosted.queue.send(Message(id: id, agent: agent, text: text, attachments: copied, context: context))
         return id
     }
 
@@ -477,12 +480,8 @@ public actor AgentHost {
         guard let aside = asides[id], let hosted = hosted[aside.session.agent] else {
             throw AgentHostError.unknownAgent(id)
         }
-        let folder = MessageID.make()
-        var copied: [Message.Attachment] = []
-        for source in attachments {
-            copied.append(try hosted.storage.addAttachment(copying: source, to: folder,
-                                                           mimeType: Self.mimeType(of: source)))
-        }
+        let copied = try hosted.storage.addAttachments(copying: attachments, to: MessageID.make(),
+                                                       mimeType: Self.mimeType(of:))
         await aside.session.send(text, attachments: copied, context: context)
     }
 
@@ -499,7 +498,14 @@ public actor AgentHost {
         let agent = aside.session.agent
         report("Sirius: \(agent): aside \(id) closed after \(transcript.count) turn(s)")
         guard transcript.contains(where: { $0.role == .agent }), let hosted = hosted[agent] else { return }
-        let file = try? Self.writeTranscript(transcript, id: id, topic: aside.topic, to: hosted.storage)
+        let file: URL?
+        do {
+            file = try Self.writeTranscript(transcript, id: id, topic: aside.topic, to: hosted.storage)
+        } catch {
+            // The agent is still told of the aside, without a file to read.
+            report("Sirius: \(agent): aside \(id): its transcript was not saved: \(error.localizedDescription)")
+            file = nil
+        }
         let exchanges = transcript.filter { $0.role == .user }.count
         await hosted.queue.note(AsidePrompts.closedNote(topic: AsidePrompts.topic(of: aside.topic),
                                                         turns: exchanges, transcript: file?.path))

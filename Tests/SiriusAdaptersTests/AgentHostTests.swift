@@ -120,6 +120,44 @@ final class AgentHostTests: XCTestCase {
         await host.stopAll()
     }
 
+    // An aside whose transcript cannot be written says so in the log; it
+    // does not pass for an aside the agent never answered.
+    func testALostAsideTranscriptIsReported() async throws {
+        try register("alpha")
+        let host = makeHost()
+        await host.start()
+        // A file where the asides folder goes: the transcript cannot be written.
+        let storage = try AgentStorage(agent: "alpha", baseDirectory: storageDirectory)
+        try Data().write(to: storage.directory.appendingPathComponent("asides"))
+
+        let aside = try await host.openAside(agent: "alpha", topic: "the queue")
+        try await host.sendAside(aside.id, text: "how does it work?")
+        for _ in 0..<500 where await aside.transcript.count < 2 { try await Task.sleep(nanoseconds: 10_000_000) }
+        await host.closeAside(aside.id)
+
+        XCTAssertTrue(reports.all.contains { $0.contains("aside \(aside.id)") && $0.contains("transcript was not saved") },
+                      "\(reports.all)")
+        await host.stopAll()
+    }
+
+    func testAFailedAttachmentCopyLeavesNoFolderBehind() async throws {
+        try register("alpha")
+        let host = makeHost()
+        await host.start()
+        let good = URL(fileURLWithPath: base).appendingPathComponent("good.txt")
+        try "hello".write(to: good, atomically: true, encoding: .utf8)
+        let missing = URL(fileURLWithPath: base).appendingPathComponent("missing.txt")
+
+        do {
+            _ = try await host.send(text: "look", attachments: [good, missing], to: "alpha")
+            XCTFail("expected the send to fail")
+        } catch {}
+        let folder = try AgentStorage(agent: "alpha", baseDirectory: storageDirectory).attachmentsDirectory
+        let left = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        XCTAssertEqual(left, [])
+        await host.stopAll()
+    }
+
     func testSendCopiesAttachmentsAndDeliversTheMessage() async throws {
         try register("alpha")
         let host = makeHost()
@@ -680,6 +718,12 @@ final class HostFakeAdapter: Adapter, @unchecked Sendable {
         lock.withLock { _turns += 1 }
         try await Task.sleep(nanoseconds: UInt64(turnDelay * 1_000_000_000))
         lock.withLock { _messages.append(message) }
+        // In an aside, the agent answers.
+        if let aside = context.aside {
+            aside.onEvent(.textStarted(id: "t1", phase: nil))
+            aside.onEvent(.textDelta(id: "t1", text: "Like this."))
+            aside.onEvent(.textEnded(id: "t1", phase: nil))
+        }
         return TurnEnd(session: nil, outcome: .completed)
     }
 

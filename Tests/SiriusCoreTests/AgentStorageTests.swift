@@ -62,6 +62,25 @@ final class AgentStorageTests: XCTestCase {
         XCTAssertTrue(cut.hasSuffix(".png"))
     }
 
+    // A message's attachments are copied whole or not at all.
+    func testAFailedCopyLeavesNoAttachmentsFolder() throws {
+        let storage = try AgentStorage(agent: "claude", baseDirectory: baseDirectory)
+        let message = MessageID.make()
+        try FileManager.default.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
+        let good = baseDirectory.appendingPathComponent("good.txt")
+        try Data("one".utf8).write(to: good)
+        let missing = baseDirectory.appendingPathComponent("missing.txt")
+
+        XCTAssertThrowsError(try storage.addAttachments(copying: [good, missing], to: message) { _ in "text/plain" })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try storage.attachmentsDirectory(for: message).path))
+
+        let copied = try storage.addAttachments(copying: [good, good], to: message) { _ in "text/plain" }
+        let folder = try storage.attachmentsDirectory(for: message)
+        XCTAssertEqual(copied.map(\.path), [folder.appendingPathComponent("good.txt").path,
+                                            folder.appendingPathComponent("good-2.txt").path])
+        XCTAssertEqual(try storage.addAttachments(copying: [], to: MessageID.make()) { _ in "x" }, [])
+    }
+
     func testAttachmentsAreWrittenAndDeduplicated() throws {
         let storage = try AgentStorage(agent: "claude", baseDirectory: baseDirectory)
         let message = MessageID.make()
