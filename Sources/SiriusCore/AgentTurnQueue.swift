@@ -44,6 +44,9 @@ public actor AgentTurnQueue {
     // The adapter open in flight, shared by warm() and the first turn so
     // the agent is never started twice at once.
     private var startup: Task<Result<SessionInfo, any Error>, Never>?
+    // Why the agent is down: the last start's failure, or the failure that
+    // ended it mid-turn. Nil once a start works.
+    private var down: String?
     // What the open adapter declared it can do; nothing until it opens.
     private var capabilities = AgentCapabilities()
     // The agent's context in tokens, from its last .usage update. The
@@ -68,6 +71,25 @@ public actor AgentTurnQueue {
         self.onUserError = onUserError
         self.pending = log.requeued.map { Self.deliverable($0.message(agent: storage.agent)) }
         self.notes = (try? storage.readState().notes) ?? []
+    }
+
+    // Whether the agent process is up. Whether a turn is running is not
+    // tracked here.
+    public enum RunState: Equatable, Sendable {
+        // Not started yet, or a start in flight.
+        case starting
+        // Started; messages go straight to it.
+        case running
+        // Down, with why; the next message starts it again.
+        case failed(String)
+        case stopped
+    }
+
+    public var runState: RunState {
+        if stopped { return .stopped }
+        if started { return .running }
+        if let down { return .failed(down) }
+        return .starting
     }
 
     // Keeps `text` for the agent, to go beside the user's next message.
@@ -240,6 +262,7 @@ public actor AgentTurnQueue {
         } catch {
             // The agent is gone: restart it before the next turn.
             started = false
+            down = "\(error)"
             let ids = finished(message)
             await adapter.close()
             for id in ids {
@@ -309,8 +332,10 @@ public actor AgentTurnQueue {
             }
             capabilities = start.capabilities
             started = true
+            down = nil
             return .success(())
         case .failure(let error):
+            down = "\(error)"
             return .failure(error)
         }
     }

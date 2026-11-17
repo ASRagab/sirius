@@ -103,6 +103,23 @@ final class AgentHostTests: XCTestCase {
         await host.stopAll()
     }
 
+    // The state is the agent's own, not the warm start's result: a start
+    // that works later, or fails later, shows.
+    func testStateFollowsStartsAfterTheWarmOne() async throws {
+        try register("alpha")
+        adapters.failStart = ["alpha"]
+        let host = makeHost()
+        await host.start()
+        let alpha = try XCTUnwrap(adapters.adapter("alpha"))
+
+        alpha.failStart = false
+        _ = try await host.send(text: "hello", attachments: [], to: "alpha")
+        try await alpha.waitForDelivery()
+        let recovered = await host.agents().first?.state
+        XCTAssertEqual(recovered, .running)
+        await host.stopAll()
+    }
+
     func testSendCopiesAttachmentsAndDeliversTheMessage() async throws {
         try register("alpha")
         let host = makeHost()
@@ -622,7 +639,7 @@ final class HostFakeAdapter: Adapter, @unchecked Sendable {
 
     let context: AgentHost.AdapterContext
     private let turnDelay: Double
-    private let failStart: Bool
+    private var _failStart: Bool
     private let lock = NSLock()
     private var _starts = 0
     private var _stops = 0
@@ -633,13 +650,17 @@ final class HostFakeAdapter: Adapter, @unchecked Sendable {
     init(context: AgentHost.AdapterContext, turnDelay: Double, failStart: Bool) {
         self.context = context
         self.turnDelay = turnDelay
-        self.failStart = failStart
+        self._failStart = failStart
         (updates, sink) = makeUpdateStream()
     }
 
     let updates: AsyncStream<SessionUpdate>
     private let sink: AsyncStream<SessionUpdate>.Continuation
 
+    var failStart: Bool {
+        get { lock.withLock { _failStart } }
+        set { lock.withLock { _failStart = newValue } }
+    }
     var starts: Int { lock.withLock { _starts } }
     var stops: Int { lock.withLock { _stops } }
     var messages: [Message] { lock.withLock { _messages } }
