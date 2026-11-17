@@ -92,6 +92,25 @@ final class AgentRegistryTests: XCTestCase {
         XCTAssertThrowsError(try AgentRegistry.parse(Data((base + #","fast":"yes"}"#).utf8)).get())
     }
 
+    // agent.json's two consolidation settings reach the registration, so
+    // the policy built from it is the one the file asks for.
+    func testConsolidationSettingsAreOptionalWholeNumbers() throws {
+        let base = #"{"agent":"a","name":"A","harness":"codex","executable":"/x","root":"/r""#
+        let set = try AgentRegistry.parse(Data((base + #","consolidate_after_idle":30,"consolidate_threshold":60000}"#).utf8)).get()
+        XCTAssertEqual(set.consolidateAfterIdle, 30)
+        XCTAssertEqual(set.consolidateThreshold, 60_000)
+        XCTAssertEqual(ConsolidationPolicy(registration: set),
+                       ConsolidationPolicy(idle: .seconds(30 * 60), threshold: 60_000))
+        let never = try AgentRegistry.parse(Data((base + #","consolidate_after_idle":0}"#).utf8)).get()
+        XCTAssertNil(ConsolidationPolicy(registration: never), "0 minutes: never")
+        let absent = try AgentRegistry.parse(Data((base + #","consolidate_threshold":null}"#).utf8)).get()
+        XCTAssertNil(absent.consolidateAfterIdle)
+        XCTAssertNil(absent.consolidateThreshold)
+        for bad in [#""15""#, "1.5", "-1", "true"] {
+            XCTAssertThrowsError(try AgentRegistry.parse(Data((base + #","consolidate_after_idle":\#(bad)}"#).utf8)).get(), bad)
+        }
+    }
+
     func testAnAgentIsOnUnlessEnabledIsFalse() throws {
         let base = #"{"agent":"a","name":"A","harness":"muse-code","executable":"/x","root":"/r""#
         XCTAssertTrue(try AgentRegistry.parse(Data((base + "}").utf8)).get().isEnabled, "missing: on")
