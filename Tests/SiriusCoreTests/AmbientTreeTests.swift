@@ -368,6 +368,12 @@ final class AmbientTreeTests: XCTestCase {
         XCTAssertEqual(AmbientSummary(try tree(["title": 4]), app: "Example"), own)
         XCTAssertEqual(AmbientSummary(try tree("no"), app: "Example"), own)
         XCTAssertEqual(AmbientSummary(try tree(["detail": "only a detail"]), app: "Example"), own)
+        // One line, and no control characters (0.2.1, operations 4.3).
+        XCTAssertEqual(
+            AmbientSummary(try tree(["title": "Budget\u{07}.numbers\nsecond line", "detail": "\u{1B}[31mB2\u{202E}"]),
+                           app: "Example"),
+            AmbientSummary(subject: "Budget.numbers", selection: "[31mB2")
+        )
         let long = AmbientSummary(try tree(["title": String(repeating: "a", count: 200)]), app: "Example")
         XCTAssertEqual(long.subject.count, AmbientDisplay.maxChars + 1)
     }

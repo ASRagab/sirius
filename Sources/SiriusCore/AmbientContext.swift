@@ -180,9 +180,9 @@ public struct AmbientTree: Decodable, Equatable, Sendable {
     public var `protocol`: String
     public var instance: String
     public var root: AmbientElement
-    // PROPOSED, not yet in the specification: the app's own words for the
-    // composer's line, as a page's meta tags word its card. Optional; a
-    // field of the wrong kind is dropped, not refused.
+    // The app's own words for the composer's line, as a page's meta tags
+    // word its card (0.2.1, operations 4.3). Optional; a field of the
+    // wrong kind is dropped, not refused.
     public var display: AmbientDisplay?
 
     public init(protocol: String, instance: String, root: AmbientElement, display: AmbientDisplay? = nil) {
@@ -543,10 +543,13 @@ public struct AmbientSummary: Equatable, Sendable {
         }
     }
 
-    // A title worth showing: one line, not blank.
+    // A title worth showing: one line, without control characters, not
+    // blank.
     private static func named(_ title: String?) -> String? {
         guard let line = title?.split(whereSeparator: \.isNewline).first else { return nil }
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        var plain = String.UnicodeScalarView()
+        plain.append(contentsOf: line.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+        let trimmed = String(plain).trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
         return trimmed.count > AmbientDisplay.maxChars ? String(trimmed.prefix(AmbientDisplay.maxChars)) + "…" : trimmed
     }
