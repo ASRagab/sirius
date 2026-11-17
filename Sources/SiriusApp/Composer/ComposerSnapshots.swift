@@ -49,6 +49,12 @@ enum ComposerSnapshots {
                 favicon: AmbientFavicon.data(inBundle: chrome, bundleID: "com.google.Chrome")
             )))
         }
+        if let path = ProcessInfo.processInfo.environment["SIRIUS_SNAPSHOT_FAVICON"],
+           let data = FileManager.default.contents(atPath: path) {
+            all.append(("9-context-favicon-file", "What is open here?", nil, ContextLine.Model(
+                subject: "338", selection: "Marina", app: "Threads", icon: nil, favicon: data
+            )))
+        }
         for shot in all {
             let panel = ComposerPanel()
             panel.setAgent(name: "Claude", mark: AgentMarks.mark(agent: "claude"))
