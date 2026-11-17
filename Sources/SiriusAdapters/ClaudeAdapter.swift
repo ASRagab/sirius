@@ -45,8 +45,8 @@ public actor ClaudeAdapter: Adapter {
     private let helpersDirectory: URL
     private let systemPrompt: String?
     // Whether the process goes by the agent's session name (--name). Off
-    // for the throwaway first turn (AgentHost.sendFirstTurn), so it never
-    // shows as a second session under the agent's name.
+    // for a session that is not the agent's own, so it never shows as a
+    // second session under the agent's name.
     private let named: Bool
     private let observer: Observer?
     private let environment: [String: String]

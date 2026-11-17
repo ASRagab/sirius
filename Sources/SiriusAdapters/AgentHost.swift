@@ -34,10 +34,6 @@ public actor AgentHost {
         public var instructions: String?
         // workers.md, for Codex's worker agents.
         public var workerInstructions: String? = nil
-        // The throwaway session of the user's first turn (sendFirstTurn):
-        // `instructions` already carry the first-turn instruction, and
-        // Claude's process goes without the agent's session name.
-        public var firstTurn = false
         // An aside's session (openAside): see AsideOptions.
         public var aside: AsideOptions? = nil
     }
@@ -185,7 +181,7 @@ public actor AgentHost {
         case .claudeCode:
             ClaudeAdapter(registration: context.registration, socketPath: context.socketPath,
                           helpersDirectory: context.helpersDirectory, systemPrompt: context.instructions,
-                          named: !context.firstTurn, aside: context.aside)
+                          aside: context.aside)
         case .codex:
             CodexAdapter(registration: context.registration, socketPath: context.socketPath,
                          helpersDirectory: context.helpersDirectory, instructions: context.instructions,
@@ -553,52 +549,6 @@ public actor AgentHost {
         return url
     }
 
-    // MARK: The first turn
-
-    // What the user's first message through Sirius gets beside the agent's
-    // own instructions (the spec's guided first turn).
-    public static let firstTurnInstruction = "This is the user's first message through Sirius, a voice interface. Reply in 2–3 short spoken-style sentences, no lists or markdown, saying what you can help with from here."
-
-    // The agent's instructions with the first-turn instruction after them.
-    public static func firstTurnInstructions(_ instructions: String?) -> String {
-        guard let instructions, !instructions.isEmpty else { return firstTurnInstruction }
-        return instructions + "\n\n" + firstTurnInstruction
-    }
-
-    // The onboarding's guided first turn. Neither harness can scope an
-    // instruction to one turn (Claude's --append-system-prompt is fixed when
-    // its process starts; Codex's developer instructions stay in the
-    // thread), so the turn runs in a throwaway session: a fresh adapter on
-    // the agent's socket, in its folder, with firstTurnInstructions, started
-    // with no session to resume, given `text` exactly as the user said it,
-    // and stopped once the turn ends. The reply reaches the user as the
-    // agent's ordinary toast. The agent's regular session is left alone and
-    // never resumes this one; the turn is not in the agent's log. Returns
-    // the message id at once; the turn runs on.
-    public func sendFirstTurn(text: String, to agent: String) throws -> String {
-        guard let hosted = hosted[agent] else { throw AgentHostError.unknownAgent(agent) }
-        let socketPath = try server.socketPath(for: agent)
-        let context = AdapterContext(
-            registration: hosted.entry.registration, socketPath: socketPath, helpersDirectory: helpersDirectory,
-            instructions: Self.firstTurnInstructions(hosted.entry.instructions),
-            workerInstructions: hosted.entry.workerInstructions, firstTurn: true)
-        let adapter = makeAdapter(context)
-        let message = Message(id: MessageID.make(), agent: agent, text: text)
-        let report = report
-        Task {
-            do {
-                _ = try await adapter.open(SessionRequest())
-                let end = try await adapter.prompt(message)
-                if case .failed(let reason) = end.outcome {
-                    report("Sirius: \(agent): the first turn failed: \(reason)")
-                }
-            } catch {
-                report("Sirius: \(agent): the first turn did not run: \(error)")
-            }
-            await adapter.close()
-        }
-        return message.id
-    }
 
     // The file's UTType's MIME type; application/octet-stream when it has none.
     static func mimeType(of url: URL) -> String {
