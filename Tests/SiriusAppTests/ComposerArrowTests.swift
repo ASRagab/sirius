@@ -26,6 +26,32 @@ final class ComposerArrowTests: XCTestCase {
         }
     }
 
+    // ⌘⌫ with the caret at the start takes the context off first, then
+    // the last file; with text before the caret it deletes text as usual,
+    // and ⌫ alone never touches the context.
+    func testCommandDeleteAtTheStartRemovesTheContextThenAFile() {
+        var context = 1, files = 1
+        view.onRemoveContext = { context > 0 ? { context -= 1; return true }() : false }
+        view.onRemoveLastAttachment = { files > 0 ? { files -= 1; return true }() : false }
+
+        type("hi")
+        view.deleteToBeginningOfLine(nil)
+        XCTAssertEqual(view.string, "")
+        XCTAssertEqual([context, files], [1, 1])
+
+        view.deleteToBeginningOfLine(nil)
+        XCTAssertEqual([context, files], [0, 1])
+        view.deleteToBeginningOfLine(nil)
+        XCTAssertEqual([context, files], [0, 0])
+    }
+
+    func testDeleteAloneLeavesTheContext() {
+        var context = 1
+        view.onRemoveContext = { context -= 1; return true }
+        view.deleteBackward(nil)
+        XCTAssertEqual(context, 1)
+    }
+
     func testArrowReplacesHyphenGreaterThan() {
         type("lib -> cook")
         XCTAssertEqual(view.string, "lib → cook")

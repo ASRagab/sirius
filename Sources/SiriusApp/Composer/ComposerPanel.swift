@@ -162,6 +162,13 @@ final class ComposerPanel: NSPanel {
             onRemoveAttachment?(last)
             return true
         }
+        // ⌘⌫ with the caret at the start takes the context off the
+        // message, through the same path as the line's ×.
+        textView.onRemoveContext = { [weak self] in
+            guard let self, context != nil else { return false }
+            onRemoveContext?()
+            return true
+        }
         scroll.documentView = textView
         background.addSubview(scroll)
         NotificationCenter.default.addObserver(self, selector: #selector(textChanged),
@@ -627,6 +634,8 @@ final class ComposerTextView: NSTextView {
     var onPasteFiles: (([URL]) -> Void)?
     // Removes the last attachment; false when there is none.
     var onRemoveLastAttachment: (() -> Bool)?
+    // Takes the context off the message; false when there is none.
+    var onRemoveContext: (() -> Bool)?
 
     private var caretAtStart: Bool {
         let range = selectedRange()
@@ -661,7 +670,11 @@ final class ComposerTextView: NSTextView {
         super.deleteBackward(sender)
     }
 
+    // ⌘⌫ with nothing before the caret to delete: the context goes
+    // first, then the last file. ⌫ alone takes files only, so one key
+    // never does both.
     override func deleteToBeginningOfLine(_ sender: Any?) {
+        if caretAtStart, onRemoveContext?() == true { return }
         if caretAtStart, onRemoveLastAttachment?() == true { return }
         super.deleteToBeginningOfLine(sender)
     }

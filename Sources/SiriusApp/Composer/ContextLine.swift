@@ -115,7 +115,7 @@ final class ContextLine: NSView {
         let preview = model.preview.map { text -> String in
             "\n\n" + (text.count > 400 ? String(text.prefix(400)) + "…" : text)
         } ?? ""
-        toolTip = "\(said), from \(model.app). Sent with your message.\(preview)"
+        toolTip = "\(said), from \(model.app). Sent with your message; ⌘⌫ at the start of the text removes it.\(preview)"
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
         setAccessibilityLabel("Context from \(model.app): \(said)")
