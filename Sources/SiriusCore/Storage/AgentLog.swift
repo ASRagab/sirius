@@ -62,10 +62,10 @@ public actor AgentLog {
         var bodies: [String: RequeuedMessage] = [:]
         for entry in Self.decode(existing).entries {
             state.apply(entry.event)
-            if case .message(let id, let text, let attachments, let sender, let fromSirius) = entry.event,
+            if case .message(let id, let text, let attachments, let sender, let fromSirius, let context) = entry.event,
                bodies[id] == nil {
                 bodies[id] = RequeuedMessage(id: id, text: text, attachments: attachments, peerSender: sender,
-                                             fromSirius: fromSirius)
+                                             fromSirius: fromSirius, hadContext: context)
             }
         }
 
@@ -129,7 +129,8 @@ public actor AgentLog {
     public func messageReceived(_ message: Message) throws {
         guard state.status[message.id] == nil else { throw AgentLogError.duplicateMessage(message.id) }
         try write(.message(id: message.id, text: message.text, attachments: message.attachments,
-                           peerSender: message.peerSender, fromSirius: message.fromSirius))
+                           peerSender: message.peerSender, fromSirius: message.fromSirius,
+                           context: message.context != nil))
     }
 
     public func turnStarted(message: String) throws {
@@ -225,9 +226,13 @@ public struct RequeuedMessage: Equatable, Sendable {
 
     public var peerSender: String?
     public var fromSirius: Bool
+    // It was sent with what the app in front had open and selected. That
+    // is not in the log, so the message goes without it and says so.
+    public var hadContext: Bool
 
     public init(id: String, text: String, attachments: [Message.Attachment] = [], peerSender: String? = nil,
-                fromSirius: Bool = false) {
+                fromSirius: Bool = false, hadContext: Bool = false) {
+        self.hadContext = hadContext
         self.id = id
         self.text = text
         self.attachments = attachments
@@ -236,9 +241,12 @@ public struct RequeuedMessage: Equatable, Sendable {
     }
 
     public func message(agent: String) -> Message {
-        Message(id: id, agent: agent, text: text, attachments: attachments, peerSender: peerSender,
-                fromSirius: fromSirius)
+        Message(id: id, agent: agent, text: hadContext ? text + "\n\n" + Self.contextNotKeptNote : text,
+                attachments: attachments, peerSender: peerSender, fromSirius: fromSirius)
     }
+
+    // TODO(copy): wording.
+    static let contextNotKeptNote = "[Sirius: this message was sent before a restart, with what the user had open and selected in another app. That context was not kept, so ask if you need it.]"
 }
 
 // The lifecycle of each message, rebuilt from the log on open and kept
@@ -258,7 +266,7 @@ struct AgentLogState: Sendable {
 
     mutating func apply(_ event: AgentLogEntry.Event) {
         switch event {
-        case .message(let id, _, _, _, _):
+        case .message(let id, _, _, _, _, _):
             if status[id] == nil {
                 status[id] = .pending
                 order.append(id)
