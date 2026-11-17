@@ -81,6 +81,28 @@ public struct AgentStorage: Sendable {
         return Message.Attachment(path: destination.path, mimeType: mimeType)
     }
 
+    // Copies all of a message's attachments, or none: when one cannot be
+    // copied, the message's folder is removed and the error thrown, so no
+    // folder is left that no message points at. For a message with no
+    // attachments stored yet.
+    public func addAttachments(copying sources: [URL], to message: String,
+                               mimeType: (URL) -> String) throws -> [Message.Attachment] {
+        guard !sources.isEmpty else { return [] }
+        do {
+            return try sources.map { try addAttachment(copying: $0, to: message, mimeType: mimeType($0)) }
+        } catch {
+            removeAttachments(of: message)
+            throw error
+        }
+    }
+
+    // Removes a message's attachments folder, when the message was never
+    // logged.
+    public func removeAttachments(of message: String) {
+        guard let folder = try? attachmentsDirectory(for: message) else { return }
+        try? FileManager.default.removeItem(at: folder)
+    }
+
     // Writes pasted or dragged content that is not a file yet.
     public func addAttachment(data: Data, named name: String, to message: String, mimeType: String) throws
         -> Message.Attachment {

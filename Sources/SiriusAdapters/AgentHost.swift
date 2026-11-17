@@ -34,10 +34,6 @@ public actor AgentHost {
         public var instructions: String?
         // workers.md, for Codex's worker agents.
         public var workerInstructions: String? = nil
-        // The throwaway session of the user's first turn (sendFirstTurn):
-        // `instructions` already carry the first-turn instruction, and
-        // Claude's process goes without the agent's session name.
-        public var firstTurn = false
         // An aside's session (openAside): see AsideOptions.
         public var aside: AsideOptions? = nil
     }
@@ -73,6 +69,11 @@ public actor AgentHost {
     private var hosted: [String: Hosted] = [:]
     private var started = false
     private var stopped = false
+    // The reload in flight; the next waits for it, so two never interleave.
+    private var reloading: Task<Void, Never>?
+    // Agents moved to a new root whose old session could not be cleared.
+    // Not started until it is.
+    private var uncleared: Set<String> = []
     private var memoryTrigger = WorkingMemoryTrigger()
     private var memoryWatcher: FileWatcher?
 
@@ -180,7 +181,7 @@ public actor AgentHost {
         case .claudeCode:
             ClaudeAdapter(registration: context.registration, socketPath: context.socketPath,
                           helpersDirectory: context.helpersDirectory, systemPrompt: context.instructions,
-                          named: !context.firstTurn, aside: context.aside)
+                          aside: context.aside)
         case .codex:
             CodexAdapter(registration: context.registration, socketPath: context.socketPath,
                          helpersDirectory: context.helpersDirectory, instructions: context.instructions,
@@ -219,7 +220,18 @@ public actor AgentHost {
     // session, since the old one belongs to the old folder. An agent turned
     // off is stopped and taken out; one turned on starts warm. Agents that
     // are unchanged keep running; a removed folder leaves its agent as it is.
+    // One at a time: a reload asked for while another runs waits its turn.
     public func reload() async {
+        let earlier = reloading
+        let task = Task {
+            await earlier?.value
+            await reloadOnce()
+        }
+        reloading = task
+        await task.value
+    }
+
+    private func reloadOnce() async {
         guard !stopped else { return }
         guard started else { return await start() }
         let scan = scanRegistry()
@@ -232,12 +244,22 @@ public actor AgentHost {
             if let current = hosted[id] {
                 guard current.entry != entry else { continue }
                 await current.queue.stop()
+                // stopAll() ran meanwhile: nothing is started after it.
+                guard !stopped else { return }
                 server.remove(agent: id)
                 commands.unregister(agent: id)
                 hosted[id] = nil
                 order.removeAll { $0 == id }
-                if current.entry.registration.root != entry.registration.root {
-                    try? current.storage.writeState(AgentState())
+                if current.entry.registration.root != entry.registration.root { uncleared.insert(id) }
+            }
+            if uncleared.contains(id) {
+                // The stored session belongs to the old root.
+                do {
+                    try AgentStorage(agent: id, baseDirectory: storageDirectory).writeState(AgentState())
+                    uncleared.remove(id)
+                } catch {
+                    report("Sirius: \(id) not started: its session from the old folder could not be cleared: \(error.localizedDescription)")
+                    continue
                 }
             }
             guard entry.registration.isEnabled else { continue }
@@ -338,7 +360,8 @@ public actor AgentHost {
                                        onUserError: {
                                            report("Sirius: \(id): \($0)")
                                            problem(id, $0)
-                                       })
+                                       },
+                                       report: { report("Sirius: \($0)") })
             commands.register(queue, for: id)
             hosted[id] = Hosted(entry: entry, storage: storage, queue: queue)
             order.append(id)
@@ -437,12 +460,15 @@ public actor AgentHost {
                      to agent: String) async throws -> String {
         guard let hosted = hosted[agent] else { throw AgentHostError.unknownAgent(agent) }
         let id = MessageID.make()
-        var copied: [Message.Attachment] = []
-        for source in attachments {
-            copied.append(try hosted.storage.addAttachment(copying: source, to: id,
-                                                           mimeType: Self.mimeType(of: source)))
+        let copied = try hosted.storage.addAttachments(copying: attachments, to: id, mimeType: Self.mimeType(of:))
+        do {
+            try await hosted.queue.send(Message(id: id, agent: agent, text: text, attachments: copied,
+                                                context: context))
+        } catch {
+            // Never logged, so nothing points at its attachments.
+            hosted.storage.removeAttachments(of: id)
+            throw error
         }
-        try await hosted.queue.send(Message(id: id, agent: agent, text: text, attachments: copied, context: context))
         return id
     }
 
@@ -477,12 +503,8 @@ public actor AgentHost {
         guard let aside = asides[id], let hosted = hosted[aside.session.agent] else {
             throw AgentHostError.unknownAgent(id)
         }
-        let folder = MessageID.make()
-        var copied: [Message.Attachment] = []
-        for source in attachments {
-            copied.append(try hosted.storage.addAttachment(copying: source, to: folder,
-                                                           mimeType: Self.mimeType(of: source)))
-        }
+        let copied = try hosted.storage.addAttachments(copying: attachments, to: MessageID.make(),
+                                                       mimeType: Self.mimeType(of:))
         await aside.session.send(text, attachments: copied, context: context)
     }
 
@@ -496,7 +518,14 @@ public actor AgentHost {
         let agent = aside.session.agent
         report("Sirius: \(agent): aside \(id) closed after \(transcript.count) turn(s)")
         guard transcript.contains(where: { $0.role == .agent }), let hosted = hosted[agent] else { return }
-        let file = try? Self.writeTranscript(transcript, id: id, topic: aside.topic, to: hosted.storage)
+        let file: URL?
+        do {
+            file = try Self.writeTranscript(transcript, id: id, topic: aside.topic, to: hosted.storage)
+        } catch {
+            // The agent is still told of the aside, without a file to read.
+            report("Sirius: \(agent): aside \(id): its transcript was not saved: \(error.localizedDescription)")
+            file = nil
+        }
         let exchanges = transcript.filter { $0.role == .user }.count
         await hosted.queue.note(AsidePrompts.closedNote(topic: AsidePrompts.topic(of: aside.topic),
                                                         turns: exchanges, transcript: file?.path))
@@ -517,52 +546,6 @@ public actor AgentHost {
         return url
     }
 
-    // MARK: The first turn
-
-    // What the user's first message through Sirius gets beside the agent's
-    // own instructions (the spec's guided first turn).
-    public static let firstTurnInstruction = "This is the user's first message through Sirius, a voice interface. Reply in 2–3 short spoken-style sentences, no lists or markdown, saying what you can help with from here."
-
-    // The agent's instructions with the first-turn instruction after them.
-    public static func firstTurnInstructions(_ instructions: String?) -> String {
-        guard let instructions, !instructions.isEmpty else { return firstTurnInstruction }
-        return instructions + "\n\n" + firstTurnInstruction
-    }
-
-    // The onboarding's guided first turn. Neither harness can scope an
-    // instruction to one turn (Claude's --append-system-prompt is fixed when
-    // its process starts; Codex's developer instructions stay in the
-    // thread), so the turn runs in a throwaway session: a fresh adapter on
-    // the agent's socket, in its folder, with firstTurnInstructions, started
-    // with no session to resume, given `text` exactly as the user said it,
-    // and stopped once the turn ends. The reply reaches the user as the
-    // agent's ordinary toast. The agent's regular session is left alone and
-    // never resumes this one; the turn is not in the agent's log. Returns
-    // the message id at once; the turn runs on.
-    public func sendFirstTurn(text: String, to agent: String) throws -> String {
-        guard let hosted = hosted[agent] else { throw AgentHostError.unknownAgent(agent) }
-        let socketPath = try server.socketPath(for: agent)
-        let context = AdapterContext(
-            registration: hosted.entry.registration, socketPath: socketPath, helpersDirectory: helpersDirectory,
-            instructions: Self.firstTurnInstructions(hosted.entry.instructions),
-            workerInstructions: hosted.entry.workerInstructions, firstTurn: true)
-        let adapter = makeAdapter(context)
-        let message = Message(id: MessageID.make(), agent: agent, text: text)
-        let report = report
-        Task {
-            do {
-                _ = try await adapter.open(SessionRequest())
-                let end = try await adapter.prompt(message)
-                if case .failed(let reason) = end.outcome {
-                    report("Sirius: \(agent): the first turn failed: \(reason)")
-                }
-            } catch {
-                report("Sirius: \(agent): the first turn did not run: \(error)")
-            }
-            await adapter.close()
-        }
-        return message.id
-    }
 
     // The file's UTType's MIME type; application/octet-stream when it has none.
     static func mimeType(of url: URL) -> String {

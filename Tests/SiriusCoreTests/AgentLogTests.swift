@@ -179,6 +179,27 @@ final class AgentLogTests: XCTestCase {
 
     // #1: re-queued and still not started at the next restart, a message is
     // re-queued again, never marked interrupted.
+    // The log keeps that a message came with context, never the context:
+    // re-queued, it goes without and tells the agent so.
+    func testARequeuedMessageSaysItsContextWasNotKept() async throws {
+        let log = try storage.openLog()
+        let context = Message.Context(app: "Notes", source: "com.apple.Notes", items: [
+            .init(id: "n1", type: "note", title: "the selected paragraph"),
+        ])
+        try await log.messageReceived(Message(id: "m_c", agent: "claude", text: "fix this", context: context))
+        try await log.messageReceived(Message(id: "m_p", agent: "claude", text: "plain"))
+        XCTAssertFalse(try String(contentsOf: storage.logURL, encoding: .utf8).contains("the selected paragraph"))
+        XCTAssertEqual(try lines().filter { $0.contains(#""context":true"#) }.count, 1)
+
+        let reopened = try storage.openLog()
+        let resent = reopened.requeued.map { $0.message(agent: "claude") }
+        XCTAssertEqual(resent.map(\.id), ["m_c", "m_p"])
+        XCTAssertTrue(resent[0].text.hasPrefix("fix this\n\n[Sirius: "))
+        XCTAssertTrue(resent[0].text.contains("was not kept"))
+        XCTAssertNil(resent[0].context)
+        XCTAssertEqual(resent[1].text, "plain")
+    }
+
     func testARequeuedMessageIsNotMarkedInterruptedOnTheNextOpen() async throws {
         do {
             let log = try storage.openLog(now: fixed)

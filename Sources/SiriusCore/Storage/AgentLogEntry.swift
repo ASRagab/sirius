@@ -34,8 +34,10 @@ public struct AgentLogEntry: Equatable, Sendable {
     public enum Event: Equatable, Sendable {
         // The user sent a Message. The agent is implied by the file. A peer's
         // is agent_message, with its sender; Sirius's own is sirius_message.
+        // context: it came with what the app in front had open and selected.
+        // Only that it did is kept, never the context itself.
         case message(id: String, text: String, attachments: [Message.Attachment], peerSender: String? = nil,
-                     fromSirius: Bool = false)
+                     fromSirius: Bool = false, context: Bool = false)
         // The agent process is up. resumed: it carries on `session`; else a
         // new one. model and effort as far as the harness has said (see
         // AgentStart); milliseconds from launch to ready.
@@ -65,7 +67,7 @@ public struct AgentLogEntry: Equatable, Sendable {
 
         public var name: String {
             switch self {
-            case .message(_, _, _, let sender, let fromSirius):
+            case .message(_, _, _, let sender, let fromSirius, _):
                 sender != nil ? "agent_message" : fromSirius ? "sirius_message" : "message"
             case .agentStarted: "agent_started"
             case .turnStarted: "turn_started"
@@ -81,7 +83,7 @@ public struct AgentLogEntry: Equatable, Sendable {
 
         public var message: String? {
             switch self {
-            case .message(let id, _, _, _, _): id
+            case .message(let id, _, _, _, _, _): id
             case .turnStarted(let message), .turnEnded(let message, _, _, _), .interrupted(let message, _),
                  .requeued(let message), .turnJoined(let message, _): message
             case .agentStarted, .agentTurn, .consolidated: nil
@@ -182,7 +184,7 @@ public struct CommandSummary: Equatable, Sendable, Codable {
 extension AgentLogEntry: Codable {
     enum CodingKeys: String, CodingKey {
         case v, at, event, message, text, attachments, session, outcome, reason, request, method, params
-        case resumed, model, effort, ms, turn, before, after, sender
+        case resumed, model, effort, ms, turn, before, after, sender, context
     }
 
     struct UnknownEvent: Error {}
@@ -202,7 +204,8 @@ extension AgentLogEntry: Codable {
                              attachments: try container.decodeIfPresent([Message.Attachment].self,
                                                                         forKey: .attachments) ?? [],
                              peerSender: eventName == "agent_message" ? try container.decode(String.self, forKey: .sender) : nil,
-                             fromSirius: eventName == "sirius_message")
+                             fromSirius: eventName == "sirius_message",
+                             context: try container.decodeIfPresent(Bool.self, forKey: .context) ?? false)
         case "agent_started":
             event = .agentStarted(session: try container.decodeIfPresent(String.self, forKey: .session),
                                   resumed: try container.decodeIfPresent(Bool.self, forKey: .resumed) ?? false,
@@ -273,11 +276,12 @@ extension AgentLogEntry: Codable {
         try container.encode(at.formatted(Self.timestampStyle), forKey: .at)
         try container.encode(event.name, forKey: .event)
         switch event {
-        case .message(let id, let text, let attachments, let sender, _):
+        case .message(let id, let text, let attachments, let sender, _, let context):
             try container.encodeIfPresent(sender, forKey: .sender)
             try container.encode(id, forKey: .message)
             try container.encode(text, forKey: .text)
             try container.encode(attachments, forKey: .attachments)
+            if context { try container.encode(true, forKey: .context) }
         case .agentStarted(let session, let resumed, let model, let effort, let milliseconds):
             try container.encodeIfPresent(session, forKey: .session)
             try container.encode(resumed, forKey: .resumed)

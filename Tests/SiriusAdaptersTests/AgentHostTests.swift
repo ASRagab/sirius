@@ -120,6 +120,44 @@ final class AgentHostTests: XCTestCase {
         await host.stopAll()
     }
 
+    // An aside whose transcript cannot be written says so in the log; it
+    // does not pass for an aside the agent never answered.
+    func testALostAsideTranscriptIsReported() async throws {
+        try register("alpha")
+        let host = makeHost()
+        await host.start()
+        // A file where the asides folder goes: the transcript cannot be written.
+        let storage = try AgentStorage(agent: "alpha", baseDirectory: storageDirectory)
+        try Data().write(to: storage.directory.appendingPathComponent("asides"))
+
+        let aside = try await host.openAside(agent: "alpha", topic: "the queue")
+        try await host.sendAside(aside.id, text: "how does it work?")
+        for _ in 0..<500 where await aside.transcript.count < 2 { try await Task.sleep(nanoseconds: 10_000_000) }
+        await host.closeAside(aside.id)
+
+        XCTAssertTrue(reports.all.contains { $0.contains("aside \(aside.id)") && $0.contains("transcript was not saved") },
+                      "\(reports.all)")
+        await host.stopAll()
+    }
+
+    func testAFailedAttachmentCopyLeavesNoFolderBehind() async throws {
+        try register("alpha")
+        let host = makeHost()
+        await host.start()
+        let good = URL(fileURLWithPath: base).appendingPathComponent("good.txt")
+        try "hello".write(to: good, atomically: true, encoding: .utf8)
+        let missing = URL(fileURLWithPath: base).appendingPathComponent("missing.txt")
+
+        do {
+            _ = try await host.send(text: "look", attachments: [good, missing], to: "alpha")
+            XCTFail("expected the send to fail")
+        } catch {}
+        let folder = try AgentStorage(agent: "alpha", baseDirectory: storageDirectory).attachmentsDirectory
+        let left = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        XCTAssertEqual(left, [])
+        await host.stopAll()
+    }
+
     func testSendCopiesAttachmentsAndDeliversTheMessage() async throws {
         try register("alpha")
         let host = makeHost()
@@ -287,6 +325,58 @@ final class AgentHostTests: XCTestCase {
         XCTAssertEqual(agents.map(\.agent), ["alpha", "beta", "gamma"])
         XCTAssertEqual(agents.map(\.state), [.running, .running, .running])
         XCTAssertEqual(Set(server.agents), ["alpha", "beta", "gamma"])
+    }
+
+    // Two reloads at once restart a changed agent once, not twice with the
+    // first replacement left running and unowned.
+    func testOverlappingReloadsRestartAChangedAgentOnce() async throws {
+        try register("alpha")
+        let host = makeHost()
+        await host.start()
+        let first = try XCTUnwrap(adapters.adapter("alpha"))
+        first.closeDelay = 0.2
+        try AgentRegistry(directory: registryDirectory).write(AgentRegistration(
+            agent: "alpha", name: "Renamed", harness: .claudeCode, executable: "/usr/bin/true", root: base))
+
+        async let one: Void = host.reload()
+        async let two: Void = host.reload()
+        _ = await (one, two)
+
+        XCTAssertEqual(adapters.count("alpha"), 2, "the first, and one replacement")
+        XCTAssertEqual(adapters.adapter("alpha")?.stops, 0)
+        let states = await host.agents().map(\.state)
+        XCTAssertEqual(states, [.running])
+        await host.stopAll()
+    }
+
+    // An agent moved to a new folder is not started there on its old
+    // session: when the session cannot be cleared it stays out, and the
+    // next reload clears it first.
+    func testAnAgentWhoseSessionCannotBeClearedIsNotStartedOnItsNewRoot() async throws {
+        try register("alpha")
+        let host = makeHost()
+        await host.start()
+        let storage = try AgentStorage(agent: "alpha", baseDirectory: storageDirectory)
+        try storage.writeState(AgentState(session: "old"))
+        let moved = base + "/elsewhere"
+        XCTAssertEqual(mkdir(moved, 0o700), 0)
+        try AgentRegistry(directory: registryDirectory).write(AgentRegistration(
+            agent: "alpha", name: "Alpha", harness: .claudeCode, executable: "/usr/bin/true", root: moved))
+
+        XCTAssertEqual(chmod(storage.directory.path, 0o500), 0)
+        await host.reload()
+        XCTAssertEqual(chmod(storage.directory.path, 0o700), 0)
+        XCTAssertEqual(adapters.count("alpha"), 1, "not started on the new root")
+        let none = await host.agents().map(\.agent)
+        XCTAssertEqual(none, [])
+        XCTAssertTrue(reports.all.contains { $0.contains("alpha") && $0.contains("not started") }, "\(reports.all)")
+
+        await host.reload()
+        let alpha = try XCTUnwrap(adapters.adapter("alpha"))
+        XCTAssertEqual(adapters.count("alpha"), 2)
+        XCTAssertEqual(alpha.context.registration.root, moved)
+        XCTAssertEqual(alpha.sessions, [nil], "the old root's session was cleared first")
+        await host.stopAll()
     }
 
     func testAnAgentThatIsOffIsNeverStartedOrSentTo() async throws {
@@ -520,74 +610,6 @@ extension AgentHostTests {
     }
 }
 
-// MARK: - The first turn
-
-extension AgentHostTests {
-    func testTheFirstTurnRunsInAThrowawaySessionWithTheFirstTurnInstruction() async throws {
-        try register("alpha", instructions: "Be brief.")
-        let host = makeHost()
-        await host.start()
-        let regular = try XCTUnwrap(adapters.adapter("alpha"))
-
-        let id = try await host.sendFirstTurn(text: "Hello, what can you do?", to: "alpha")
-        let throwaway = try XCTUnwrap(adapters.adapter("alpha"))
-        XCTAssertFalse(throwaway === regular, "a fresh adapter, not the agent's own")
-        try await throwaway.waitForDelivery()
-
-        XCTAssertTrue(throwaway.context.firstTurn)
-        XCTAssertEqual(throwaway.context.instructions, "Be brief.\n\n" + AgentHost.firstTurnInstruction)
-        XCTAssertEqual(throwaway.context.socketPath, try server.socketPath(for: "alpha"))
-        XCTAssertEqual(throwaway.sessions, [nil], "never resumes a session")
-        XCTAssertEqual(throwaway.messages.map(\.text), ["Hello, what can you do?"])
-        XCTAssertEqual(throwaway.messages.map(\.id), [id])
-        for _ in 0..<500 where throwaway.stops == 0 { try await Task.sleep(nanoseconds: 10_000_000) }
-        XCTAssertEqual(throwaway.stops, 1, "stopped once the turn ends")
-        // The regular session is left alone.
-        XCTAssertFalse(regular.context.firstTurn)
-        XCTAssertEqual(regular.context.instructions, "Be brief.")
-        XCTAssertTrue(regular.messages.isEmpty)
-        XCTAssertEqual(regular.stops, 0)
-        await host.stopAll()
-    }
-
-    func testTheFirstTurnInstructionStandsAloneWithoutInstructions() {
-        XCTAssertEqual(AgentHost.firstTurnInstructions(nil), AgentHost.firstTurnInstruction)
-        XCTAssertEqual(AgentHost.firstTurnInstructions(""), AgentHost.firstTurnInstruction)
-        XCTAssertTrue(AgentHost.firstTurnInstruction.contains("2–3 short spoken-style sentences"))
-    }
-
-    func testAFirstTurnToAnUnknownAgentThrows() async throws {
-        let host = makeHost()
-        await host.start()
-        do {
-            _ = try await host.sendFirstTurn(text: "hi", to: "nobody")
-            XCTFail("expected unknownAgent")
-        } catch AgentHostError.unknownAgent {}
-    }
-
-    func testTheDefaultFirstTurnAdaptersBuildTheirSessionsFresh() {
-        let claude = AgentRegistration(agent: "claude", name: "Claude", harness: .claudeCode,
-                                       executable: "/usr/bin/true", root: "/tmp")
-        let instructions = AgentHost.firstTurnInstructions("Reply through Sirius.")
-        // Claude: a fresh process, no --resume and no session name, with the
-        // first-turn text appended to the normal instructions.
-        let args = ClaudeAdapter.arguments(session: nil, systemPrompt: instructions, name: nil)
-        XCTAssertFalse(args.contains("--resume"))
-        XCTAssertFalse(args.contains("--name"))
-        XCTAssertEqual(args.firstIndex(of: "--append-system-prompt").map { args[$0 + 1] }, instructions)
-        XCTAssertTrue(AgentHost.makeDefaultAdapter(AgentHost.AdapterContext(
-            registration: claude, socketPath: "/tmp/s.sock", helpersDirectory: URL(fileURLWithPath: "/tmp"),
-            instructions: instructions, firstTurn: true)) is ClaudeAdapter)
-        // Codex: a new thread whose developer instructions end with it.
-        let codex = AgentRegistration(agent: "codex", name: "Codex", harness: .codex,
-                                      executable: "/usr/bin/true", root: "/tmp")
-        let params = CodexAdapter.threadParams(registration: codex, instructions: instructions)
-        XCTAssertEqual(params["developerInstructions"]?.string, instructions)
-        XCTAssertTrue(instructions.hasSuffix(AgentHost.firstTurnInstruction))
-        XCTAssertNil(params["threadId"])
-    }
-}
-
 // MARK: - Fakes
 
 final class Reports: @unchecked Sendable {
@@ -611,6 +633,7 @@ final class RecordingQueue: CommandQueue, @unchecked Sendable {
 final class HostFakeAdapters: @unchecked Sendable {
     private let lock = NSLock()
     private var made: [String: HostFakeAdapter] = [:]
+    private var counts: [String: Int] = [:]
     private var _turnDelay: Double = 0
     private var _failStart: Set<String> = []
 
@@ -627,11 +650,16 @@ final class HostFakeAdapters: @unchecked Sendable {
     func make(_ context: AgentHost.AdapterContext) -> any Adapter {
         let adapter = HostFakeAdapter(context: context, turnDelay: turnDelay,
                                       failStart: failStart.contains(context.registration.agent))
-        lock.withLock { made[context.registration.agent] = adapter }
+        lock.withLock {
+            made[context.registration.agent] = adapter
+            counts[context.registration.agent, default: 0] += 1
+        }
         return adapter
     }
 
     func adapter(_ agent: String) -> HostFakeAdapter? { lock.withLock { made[agent] } }
+    // How many adapters were made for the agent.
+    func count(_ agent: String) -> Int { lock.withLock { counts[agent] ?? 0 } }
 }
 
 final class HostFakeAdapter: Adapter, @unchecked Sendable {
@@ -640,6 +668,7 @@ final class HostFakeAdapter: Adapter, @unchecked Sendable {
     let context: AgentHost.AdapterContext
     private let turnDelay: Double
     private var _failStart: Bool
+    private var _closeDelay: Double = 0
     private let lock = NSLock()
     private var _starts = 0
     private var _stops = 0
@@ -661,6 +690,10 @@ final class HostFakeAdapter: Adapter, @unchecked Sendable {
         get { lock.withLock { _failStart } }
         set { lock.withLock { _failStart = newValue } }
     }
+    var closeDelay: Double {
+        get { lock.withLock { _closeDelay } }
+        set { lock.withLock { _closeDelay = newValue } }
+    }
     var starts: Int { lock.withLock { _starts } }
     var stops: Int { lock.withLock { _stops } }
     var messages: [Message] { lock.withLock { _messages } }
@@ -680,6 +713,12 @@ final class HostFakeAdapter: Adapter, @unchecked Sendable {
         lock.withLock { _turns += 1 }
         try await Task.sleep(nanoseconds: UInt64(turnDelay * 1_000_000_000))
         lock.withLock { _messages.append(message) }
+        // In an aside, the agent answers.
+        if let aside = context.aside {
+            aside.onEvent(.textStarted(id: "t1", phase: nil))
+            aside.onEvent(.textDelta(id: "t1", text: "Like this."))
+            aside.onEvent(.textEnded(id: "t1", phase: nil))
+        }
         return TurnEnd(session: nil, outcome: .completed)
     }
 
@@ -687,7 +726,10 @@ final class HostFakeAdapter: Adapter, @unchecked Sendable {
 
     func compact() async throws -> Consolidation? { nil }
 
-    func close() async { lock.withLock { _stops += 1 } }
+    func close() async {
+        lock.withLock { _stops += 1 }
+        try? await Task.sleep(nanoseconds: UInt64(closeDelay * 1_000_000_000))
+    }
 
     func waitForDelivery() async throws {
         for _ in 0..<500 where messages.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }

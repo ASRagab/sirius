@@ -32,6 +32,9 @@ public actor AgentTurnQueue {
     // Told instead, with what to say, when the failure is a UserFacingError.
     private let onUserError: @Sendable (String) -> Void
     private let consolidation: ConsolidationPolicy?
+    // For what went wrong that nobody is told of: a log line or the state
+    // that could not be written.
+    private let report: @Sendable (String) -> Void
 
     private var pending: [Message] = []
     // The message whose turn is running, and those that joined it.
@@ -62,7 +65,9 @@ public actor AgentTurnQueue {
     public init(adapter: any Adapter, log: AgentLog, storage: AgentStorage,
                 consolidation: ConsolidationPolicy? = nil,
                 onFailure: @escaping @Sendable (String) -> Void = { _ in },
-                onUserError: @escaping @Sendable (String) -> Void = { _ in }) {
+                onUserError: @escaping @Sendable (String) -> Void = { _ in },
+                report: @escaping @Sendable (String) -> Void = { _ in }) {
+        self.report = report
         self.consolidation = consolidation
         self.adapter = adapter
         self.log = log
@@ -119,10 +124,24 @@ public actor AgentTurnQueue {
         persistNotes()
     }
 
+    // A line for the log. The turn goes on when it cannot be written, and
+    // the failure is reported rather than dropped.
+    private func filed(_ write: () async throws -> Void) async {
+        do {
+            try await write()
+        } catch {
+            report("\(storage.agent): a log line was not written: \(error)")
+        }
+    }
+
     private func persistNotes() {
         var state = (try? storage.readState()) ?? AgentState()
         state.notes = notes.isEmpty ? nil : notes
-        try? storage.writeState(state)
+        do {
+            try storage.writeState(state)
+        } catch {
+            report("\(storage.agent): state.json was not written: \(error.localizedDescription)")
+        }
     }
 
     // Logs the message and queues it. Returns at once; the turn runs later.
@@ -134,14 +153,15 @@ public actor AgentTurnQueue {
             let carrying = noted(message)
             if await adapter.steer(carrying) == .joined {
                 delivered(notesOf: carrying)
-                try? await log.turnJoined(message: message.id, turn: turn)
+                await filed { try await log.turnJoined(message: message.id, turn: turn) }
                 if current == turn {
                     joined.append(message.id)
                 } else {
                     // The turn ended while the steer was on its way; the
                     // harness took the message in before it did.
-                    try? await log.turnEnded(message: message.id, session: try? storage.readState().session,
-                                             outcome: .completed)
+                    let session = try? storage.readState().session
+                    await filed { try await log.turnEnded(message: message.id, session: session,
+                                                          outcome: .completed) }
                 }
                 return
             }
@@ -224,15 +244,15 @@ public actor AgentTurnQueue {
     private func consolidate() async {
         do {
             guard let done = try await adapter.compact() else { return }
-            try? await log.consolidated(done)
+            await filed { try await log.consolidated(done) }
         } catch is CancellationError {
         } catch {
             // The agent is gone, as after a failed turn: restart it before
             // the next one. Nobody asked for this step, so nobody is told.
             started = false
             await adapter.close()
-            try? await log.consolidated(Consolidation(before: nil, after: nil, milliseconds: 0,
-                                                      outcome: .failed("\(error)")))
+            let failed = Consolidation(before: nil, after: nil, milliseconds: 0, outcome: .failed("\(error)"))
+            await filed { try await log.consolidated(failed) }
         }
     }
 
@@ -242,12 +262,12 @@ public actor AgentTurnQueue {
             // stays pending in the log for the next start.
             if stopped { return }
             let reason = "agent did not start: \(error)"
-            try? await log.turnStarted(message: message.id)
-            try? await log.turnEnded(message: message.id, session: nil, outcome: .failed(reason: reason))
+            await filed { try await log.turnStarted(message: message.id) }
+            await filed { try await log.turnEnded(message: message.id, session: nil, outcome: .failed(reason: reason)) }
             if !stopped { fail(reason, error) }
             return
         }
-        try? await log.turnStarted(message: message.id)
+        await filed { try await log.turnStarted(message: message.id) }
         current = message.id
         joined = []
         do {
@@ -255,10 +275,10 @@ public actor AgentTurnQueue {
             let end = try await adapter.prompt(carrying)
             if case .completed = end.outcome { delivered(notesOf: carrying) }
             if let session = end.session { persist(session) }
-            for id in finished(message) { try? await log.turnEnded(message: id, end) }
+            for id in finished(message) { await filed { try await log.turnEnded(message: id, end) } }
             if case .failed(let reason) = end.outcome { onFailure(reason) }
         } catch is CancellationError {
-            for id in finished(message) { try? await log.interrupted(message: id, reason: Self.stopReason) }
+            for id in finished(message) { await filed { try await log.interrupted(message: id, reason: Self.stopReason) } }
         } catch {
             // The agent is gone: restart it before the next turn.
             started = false
@@ -266,7 +286,7 @@ public actor AgentTurnQueue {
             let ids = finished(message)
             await adapter.close()
             for id in ids {
-                try? await log.turnEnded(message: id, session: nil, outcome: .failed(reason: "\(error)"))
+                await filed { try await log.turnEnded(message: id, session: nil, outcome: .failed(reason: "\(error)")) }
             }
             if !stopped { fail("\(error)", error) }
         }
@@ -323,8 +343,10 @@ public actor AgentTurnQueue {
                 + elapsed.components.attoseconds / 1_000_000_000_000_000)
             // Resumed unless the adapter fell back to a new session.
             let resumed = session != nil && (start.session == nil || start.session == session)
-            try? await log.agentStarted(session: start.session ?? session, resumed: resumed,
-                                        model: start.model, effort: start.effort, milliseconds: milliseconds)
+            await filed {
+                try await log.agentStarted(session: start.session ?? session, resumed: resumed,
+                                           model: start.model, effort: start.effort, milliseconds: milliseconds)
+            }
             if stopped {
                 // stop() ran while the agent was starting; it must not outlive it.
                 await adapter.close()
@@ -351,7 +373,7 @@ public actor AgentTurnQueue {
     // failure reported like any other.
     private func agentTurnEnded(_ end: TurnEnd) async {
         if let session = end.session { persist(session) }
-        try? await log.agentTurn(end)
+        await filed { try await log.agentTurn(end) }
         if case .failed(let reason) = end.outcome, !stopped { onFailure(reason) }
         if pump == nil { armIdleTimer() }
     }
@@ -360,7 +382,11 @@ public actor AgentTurnQueue {
         var state = (try? storage.readState()) ?? AgentState()
         guard state.session != session else { return }
         state.session = session
-        try? storage.writeState(state)
+        do {
+            try storage.writeState(state)
+        } catch {
+            report("\(storage.agent): state.json was not written: \(error.localizedDescription)")
+        }
     }
 }
 
