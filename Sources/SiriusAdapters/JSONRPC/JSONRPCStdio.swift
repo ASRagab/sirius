@@ -45,6 +45,13 @@ final class JSONRPCStdio: @unchecked Sendable {
     private let stderr = Pipe()
 
     private let lock = NSLock()
+    // Held for the whole of one write to the child, which can block until
+    // the child reads. The reader never takes it and nothing else is done
+    // under it, so a blocked write cannot stop the reading that unblocks it.
+    private let writeLock = NSLock()
+    // The reader's answers to the child's requests are written here, in
+    // order, so the reader does not block on a write either.
+    private let answers = DispatchQueue(label: "sirius.jsonrpc.answers")
     private var handlers = Handlers()
     private var nextId: Int64 = 0
     private var pending: [Int64: CheckedContinuation<JSONValue, Error>] = [:]
@@ -189,11 +196,14 @@ final class JSONRPCStdio: @unchecked Sendable {
         }
         data.append(0x0A)
         let fd = stdin.fileHandleForWriting.fileDescriptor
+        if let failure = lock.withLock({ failure }) { return failure }
         // One writer at a time, so lines never interleave.
-        return lock.withLock { () -> Error? in
-            if let failure { return failure }
+        return writeLock.withLock { () -> Error? in
             var offset = 0
             while offset < data.count {
+                // terminate() closes stdin once the connection has failed;
+                // nothing more is written to that descriptor after.
+                if offset > 0, let failure = lock.withLock({ failure }) { return failure }
                 let written = data[offset...].withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
                 if written < 0 {
                     if errno == EINTR { continue }
@@ -278,7 +288,7 @@ final class JSONRPCStdio: @unchecked Sendable {
                 "code": .number(Double(code)), "message": .string(message),
             ])])
         }
-        _ = send(frame)
+        answers.async { [self] in _ = send(frame) }
     }
 
     // MARK: - Ending
