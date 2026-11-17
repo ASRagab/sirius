@@ -52,7 +52,7 @@ final class ContextLine: NSView {
         addSubview(label)
 
         detail.font = .systemFont(ofSize: 12)
-        detail.textColor = NSColor(white: 1, alpha: 0.4)
+        detail.textColor = Palette.secondary
         detail.maximumNumberOfLines = 1
         detail.lineBreakMode = .byTruncatingTail
         detail.translatesAutoresizingMaskIntoConstraints = false
@@ -100,7 +100,7 @@ final class ContextLine: NSView {
         if let data = model.favicon, let mark = NSImage(data: data), mark.isValid {
             mark.size = NSSize(width: 16, height: 16)
             icon.image = mark
-            icon.alphaValue = 0.8
+            icon.alphaValue = 1
         } else {
             // An app icon is drawn for a Dock, not for a line of text: grey
             // and dimmed, it sits with the words instead of over them.
@@ -108,7 +108,8 @@ final class ContextLine: NSView {
             icon.alphaValue = 0.75
         }
         label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = NSColor(white: 1, alpha: 0.55)
+        // What is open reads as text; what is selected in it is secondary.
+        label.textColor = Palette.text
         label.stringValue = model.subject
         detail.stringValue = model.selection.map { "  ·  \($0)" } ?? ""
         let said = [model.subject, model.selection].compactMap { $0 }.joined(separator: ", ")
