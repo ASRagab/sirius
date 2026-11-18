@@ -93,7 +93,10 @@ final class SiriusDelivery: TranscriptDelivery {
         case .agent(let agent, let body):
             SiriusLog.dictation.info("dictation: \(body.count) chars to \(agent)")
             do {
-                let context = await frontContext(for: agent)
+                let front = await frontContext(for: agent, body: body)
+                // Held in the composer, behind the warning.
+                if front.held { return }
+                let context = front.context
                 try await target.send(text: body, attachments: [], context: context, to: agent)
             } catch {
                 SiriusLog.dictation.error("dictation: send to \(agent) failed: \(error)")
@@ -114,26 +117,31 @@ final class SiriusDelivery: TranscriptDelivery {
     // main; nothing in the tests.
     var notice: @MainActor (_ agent: String, _ text: String) -> Void = { _, _ in }
 
-    private func frontContext(for agent: String) async -> Message.Context? {
+    private func frontContext(for agent: String, body: String) async -> (context: Message.Context?, held: Bool) {
         guard SettingsKeys.ambientContextEnabled(in: .standard),
               let front = NSWorkspace.shared.frontmostApplication, front != .current,
               let bundleID = front.bundleIdentifier
-        else { return nil }
+        else { return (nil, false) }
         let snapshot = await readContext(front.processIdentifier, bundleID)
-        // A spoken message has no composer to warn in, so context from an
-        // app marked sensitive is left out, and said to be, until the user
-        // stops the warning for that app or in Settings.
+        // A spoken message has no composer to warn in, so one over an app
+        // marked sensitive opens the composer with the words in it and the
+        // warning showing (confirmSpoken). When the composer is already up
+        // with a draft, the context is left out, and said to be.
         if snapshot != nil, ContextWarnings.shouldWarn(bundleID, in: .standard) {
+            if composer.confirmSpoken(body, to: agent) {
+                SiriusLog.dictation.info("dictation: held in the composer, warning before context from \(bundleID)")
+                return (nil, true)
+            }
             let app = front.localizedName ?? snapshot?.appName ?? "that app"
             // TODO(copy): copy
             notice(agent, "Left out what you had selected in \(app). Send it from the composer, or stop this warning in Settings.")
             SiriusLog.dictation.info("dictation: context from \(bundleID) left out, sensitive")
-            return nil
+            return (nil, false)
         }
         let context = snapshot?.messageContext
         // Counts only: what was selected is never logged.
         let via = snapshot?.helper.map { " via helper \($0)" } ?? ""
         SiriusLog.dictation.info("dictation: context from \(bundleID)\(via): \(context?.items.count ?? 0) items")
-        return context
+        return (context, false)
     }
 }

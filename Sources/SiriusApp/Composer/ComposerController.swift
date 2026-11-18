@@ -220,6 +220,7 @@ final class ComposerController {
     // AgentHost actor.
     func open() {
         ComposerSignposts.event("open")
+        sendWhenRead = false
         clearSent()
         let front = NSWorkspace.shared.frontmostApplication
         if front != .current { previous = front }
@@ -270,9 +271,11 @@ final class ComposerController {
             guard self.ambient.accept(answer, ticket: ticket), let answer else {
                 // Nothing to send after all: the name comes off the line.
                 if current, named != nil { self.panel.setContext(nil) }
+                if current, self.sendWhenRead { self.sendWhenRead = false; self.send() }
                 return
             }
             self.showContext(answer)
+            if self.sendWhenRead { self.sendWhenRead = false; self.send() }
             self.startWatch(on: answer.provider)
             // Ids and counts only: what was selected is never logged.
             let via = answer.provider.isNative ? " via accessibility" : answer.helper.map { " via helper \($0)" } ?? ""
@@ -437,6 +440,23 @@ final class ComposerController {
     // being sent, so attachments and edits can follow;
     // the composer stays open and Enter sends as usual. Text from a send
     // still closing is cleared first, as a reopen would.
+    // A spoken message that would carry context from an app marked
+    // sensitive has no composer to warn in, so it is given one: the
+    // composer opens on that agent with the words in it, and once the app
+    // has been read the send is made, which shows the warning. Return
+    // sends, Esc cancels and leaves the words. False when the composer is
+    // already up with something of the user's in it.
+    func confirmSpoken(_ text: String, to agent: String) -> Bool {
+        guard !panel.isVisible else { return false }
+        open()
+        selection.choose(agent)
+        refreshAgent()
+        panel.insert(text)
+        sendWhenRead = true
+        return true
+    }
+    private var sendWhenRead = false
+
     func insertDictation(_ text: String) {
         clearSent()
         panel.insert(text)
