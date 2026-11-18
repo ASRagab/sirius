@@ -14,3 +14,5 @@ dist/
 .tasks/
 # Internal docs: local only, never committed.
 docs/.internal/
+
+.marina/
