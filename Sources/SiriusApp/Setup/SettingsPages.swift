@@ -223,7 +223,7 @@ private struct ToastsGroup: View {
 
     var body: some View {
         SettingsGroup("Toasts") { // TODO(copy): copy
-            PillRow("Stay for") { // TODO(copy): copy
+            PillRow("Duration") { // TODO(copy): copy
                 PillMenu(title: label(ToastStay.choices.contains(seconds) ? seconds : ToastStay.defaultSeconds)) {
                     ForEach(ToastStay.choices, id: \.self) { choice in
                         Button(label(choice)) { seconds = choice }
@@ -472,18 +472,22 @@ private struct ContextPane: View {
                 }
                 .disabled(!context.enabled)
             }
-            .padding(.trailing, 14)
+            // 32 less the width the scroller keeps for itself, so rows end
+            // where the other pages' rows do.
+            .padding(.trailing, 16)
         }
         // Shown when the list is longer than the window, so it is plain
         // there is more below.
         .scrollIndicators(.visible)
+        // The scroller sits at the window's edge, in the page's own margin.
+        .padding(.trailing, -32)
     }
 
     static let sensitiveNote = "Sensitive: Sirius warns before sending." // TODO(copy): copy
 
     private func heading(_ title: String, note: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.headline)
+            Text(title).font(.system(size: 13, weight: .medium))
             Text(note).font(.caption).foregroundStyle(.secondary)
         }
     }

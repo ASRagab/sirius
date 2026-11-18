@@ -115,7 +115,7 @@ struct SettingsGroup<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title3.weight(.semibold))
+            Text(title).font(.title3.weight(.medium))
             content()
         }
     }
