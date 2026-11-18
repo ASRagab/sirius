@@ -128,7 +128,7 @@ final class ToastPresenter {
             if panel.isStranded { SiriusLog.toast.error("toast panel still on no Space after a rebuild") }
         }
         // An alert has no timer: it holds the queue until clicked.
-        if let duration = toast.duration {
+        if let duration = toast.duration(base: ToastStay.seconds()) {
             expire(seq: toast.seq, after: duration)
         }
         scheduleVerify(seq: toast.seq)

@@ -11,11 +11,24 @@ public struct Toast: Equatable, Sendable {
     // Stays until dismissed and holds the queue behind it.
     public var alert: Bool
 
-    // How long a non-alert toast stays, after the reference ack bubble's
-    // final line: 5 s, plus 60 ms per character past the first 60, at most
-    // 10 s, so three- and four-line toasts leave sooner (was 15 s).
-    public var duration: TimeInterval? {
-        alert ? nil : min(10, 5 + Double(max(0, text.unicodeScalars.count - 60)) * 0.06)
+    // How long a non-alert toast stays: the base the user chose in Settings
+    // (ToastStay), plus 60 ms per character past the first 60, at most twice
+    // the base, so long toasts get a little longer. Was a fixed 5 s base
+    // capped at 10 s.
+    public func duration(base: TimeInterval = ToastStay.defaultSeconds) -> TimeInterval? {
+        alert ? nil : min(2 * base, base + Double(max(0, text.unicodeScalars.count - 60)) * 0.06)
+    }
+}
+
+// The user's choice of how long toasts stay, in UserDefaults.
+public enum ToastStay {
+    public static let key = "toastSeconds"
+    public static let choices: [TimeInterval] = [3, 5, 8, 12]
+    public static let defaultSeconds: TimeInterval = 3
+
+    public static func seconds(_ defaults: UserDefaults = .standard) -> TimeInterval {
+        let value = defaults.double(forKey: key)
+        return choices.contains(value) ? value : defaultSeconds
     }
 }
 

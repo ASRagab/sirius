@@ -205,7 +205,28 @@ private struct AgentsPane: View {
                 SettingsAgentRow(agent: agent) { model.focus(agent.harness) }
             }
         }
+        ToastsGroup()
     }
+}
+
+// How long a toast stays before it leaves by itself (ToastStay). Alerts
+// stay until dismissed whatever this says.
+private struct ToastsGroup: View {
+    @AppStorage(ToastStay.key) private var seconds = ToastStay.defaultSeconds
+
+    var body: some View {
+        SettingsGroup("Toasts") { // TODO(copy): copy
+            PillRow("Stay for") { // TODO(copy): copy
+                PillMenu(title: label(ToastStay.choices.contains(seconds) ? seconds : ToastStay.defaultSeconds)) {
+                    ForEach(ToastStay.choices, id: \.self) { choice in
+                        Button(label(choice)) { seconds = choice }
+                    }
+                }
+            }
+        }
+    }
+
+    private func label(_ value: TimeInterval) -> String { "\(Int(value)) s" }
 }
 
 private struct SettingsAgentRow: View {

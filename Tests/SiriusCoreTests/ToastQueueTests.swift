@@ -17,7 +17,7 @@ final class ToastQueueTests: XCTestCase {
         XCTAssertNil(queue.dismiss(seq: 999), "a stale seq is ignored")
         XCTAssertEqual(queue.dismiss(seq: first.seq)?.next?.text, "b")
         XCTAssertEqual(queue.backlog, 2)
-        XCTAssertNil(queue.current?.duration, "an alert has no timer")
+        XCTAssertNil(queue.current?.duration(), "an alert has no timer")
         XCTAssertNil(queue.dismiss(seq: first.seq), "a double dismiss is ignored")
         XCTAssertEqual(queue.enqueue(agent: "dev", text: "e", alert: false), .queued(backlog: 3))
 
@@ -61,12 +61,15 @@ final class ToastQueueTests: XCTestCase {
 
     func testDurations() {
         func duration(_ count: Int) -> Double? {
-            Toast(seq: 0, agent: "", text: String(repeating: "x", count: count), alert: false).duration
+            Toast(seq: 0, agent: "", text: String(repeating: "x", count: count), alert: false).duration(base: 5)
         }
         XCTAssertEqual(duration(0), 5)
         XCTAssertEqual(duration(60), 5)
         XCTAssertEqual(duration(110)!, 8, accuracy: 0.001)
         XCTAssertEqual(duration(150), 10)
         XCTAssertEqual(duration(280), 10)
+        let short = Toast(seq: 0, agent: "", text: String(repeating: "x", count: 280), alert: false)
+        XCTAssertEqual(short.duration(), 6, "default base 3 s, capped at twice it")
+        XCTAssertEqual(ToastStay.seconds(UserDefaults(suiteName: "toast-stay-test")!), 3)
     }
 }

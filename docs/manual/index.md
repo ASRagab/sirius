@@ -101,7 +101,7 @@ You never read the agent's raw output. The agent chooses one of these for each t
 
 | Form | What it is | How to dismiss it |
 |---|---|---|
-| Toast | A short line or two in a small capsule, with the agent's logo | It leaves by itself after 5 to 10 seconds. Keep the pointer on it to hold it. Click the × at its top-left corner, or swipe up on it with two fingers, to dismiss it sooner. |
+| Toast | A short line or two in a small capsule, with the agent's logo | It leaves by itself after 3 seconds, a little longer for a long one; change this in Settings (§8). Keep the pointer on it to hold it. Click the × at its top-left corner, or swipe up on it with two fingers, to dismiss it sooner. |
 | Alert | A toast that stays, used when the agent cannot go on without you | Only the ×, or a swipe up |
 | Notification | A normal macOS notification, for results you may come back to later | Notification Center |
 | Speech | The agent reads a line aloud. It does this only when you ask to hear something. | Click the speech capsule to stop the line being spoken |
@@ -151,6 +151,7 @@ Open **Settings…** from the menu-bar menu, or press ⌘, while the menu is ope
 | Keys | Compose | Any key with ⌘, ⌃ or ⌥, or an F-key. Click it and press the new shortcut. |
 | Permissions | Microphone, Accessibility | Shows Allowed, or an Allow button |
 | Agents | One row per agent | See §7 |
+| Toasts | Stay for | How long a toast stays before it leaves by itself: 3, 5, 8 or 12 seconds (3 by default), up to twice that for a long one. Alerts stay until you dismiss them. |
 | Dictation | Model | Shows the speech model in use and its size. It cannot be changed here. |
 
 The window also shows the version of Sirius you are running.
