@@ -63,7 +63,8 @@ enum SettingsSnapshots {
             Shot(name: "3-agents") { $0.select(.agents) },
             Shot(name: "4-agent-claude") { $0.focus(.claudeCode) },
             Shot(name: "5-agent-codex") { $0.focus(.codex) },
-            Shot(name: "6-dictation") { $0.select(.dictation) },
+            Shot(name: "6-context") { $0.select(.context) },
+            Shot(name: "7-dictation") { $0.select(.dictation) },
         ]
     }
 }
@@ -87,6 +88,18 @@ extension SettingsModel {
         }
         let dictation = ModelRegistry.find(DictationModel.defaultID) ?? ModelRegistry.shared[0]
         return SettingsModel(agents: agents, shortcuts: ShortcutsModel(compose: .compose, holdKey: .fn),
-                             dictation: dictation, write: { _ in })
+                             dictation: dictation, context: .preview(), write: { _ in })
+    }
+}
+
+extension ContextSettings {
+    // Two made-up providers in a defaults domain of its own, never Sirius's.
+    static func preview() -> ContextSettings {
+        let suite = "sirius-settings-snapshots"
+        let defaults = UserDefaults(suiteName: suite) ?? .standard
+        defaults.removePersistentDomain(forName: suite)
+        ContextProviders.note(id: "com.google.Chrome", name: "Google Chrome", in: defaults)
+        ContextProviders.note(id: "dev.zed.Zed", name: "Zed", in: defaults)
+        return ContextSettings(defaults: defaults)
     }
 }

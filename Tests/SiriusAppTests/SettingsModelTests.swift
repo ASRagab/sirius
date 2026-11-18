@@ -36,7 +36,7 @@ final class SettingsModelTests: XCTestCase {
     }
 
     func testSidebarOrderAndStart() {
-        XCTAssertEqual(SettingsSection.allCases.map(\.title), ["Keys", "Permissions", "Agents", "Dictation"])
+        XCTAssertEqual(SettingsSection.allCases.map(\.title), ["Keys", "Permissions", "Agents", "Context", "Dictation"])
         XCTAssertEqual(model(existing: []).section, .keys)
     }
 

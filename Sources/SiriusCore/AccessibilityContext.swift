@@ -33,7 +33,7 @@ public enum NativeApps {
     // Messages is left out: every bubble on screen is readable there, and
     // it is someone else's words.
     public static let all: [NativeApp] = [
-        NativeApp(id: "com.apple.Preview", name: "Preview", shape: .document("pdf"), onByDefault: true, sensitive: false),
+        NativeApp(id: "com.apple.Preview", name: "Preview", shape: .document("file"), onByDefault: true, sensitive: false),
         NativeApp(id: "com.apple.Notes", name: "Notes", shape: .document("note"), onByDefault: true, sensitive: false),
         NativeApp(id: "com.apple.Safari", name: "Safari", shape: .document("page"), onByDefault: true, sensitive: false),
         NativeApp(id: "com.apple.finder", name: "Finder", shape: .folder, onByDefault: true, sensitive: false),
@@ -137,7 +137,7 @@ public enum AccessibilityContext {
             guard name != nil || url != nil || selection != nil else { return nil }
             var details: [String: AmbientJSON] = [:]
             for (key, value) in reading.details { if let value = clean(value) { details[key] = .string(value) } }
-            inner = AmbientElement(id: "document", role: "Document", subrole: kind, title: name, url: url, focused: true,
+            inner = AmbientElement(id: "document", role: "Document", subrole: fileKind(url) ?? kind, title: name, url: url, focused: true,
                                    children: selection.map { [$0] } ?? [], attributes: details.isEmpty ? nil : details)
         case .folder:
             let rows = reading.items.prefix(maxItems).enumerated().compactMap { index, item -> AmbientElement? in
@@ -173,6 +173,20 @@ public enum AccessibilityContext {
         }
     }
 
+    // What a file is, by its extension, when the app opens more than one
+    // kind: Preview shows PDFs and images alike.
+    static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "heic", "heif", "gif", "tif", "tiff", "bmp", "webp", "avif", "icns", "psd", "svg",
+    ]
+
+    private static func fileKind(_ address: String?) -> String? {
+        guard let address, let url = URL(string: address), url.isFileURL else { return nil }
+        let ext = url.pathExtension.lowercased()
+        if ext == "pdf" { return "pdf" }
+        if imageExtensions.contains(ext) { return "image" }
+        return ext.isEmpty ? nil : "file"
+    }
+
     private static func fileName(_ address: String?) -> String? {
         guard let address, let url = URL(string: address), url.isFileURL, !url.hasDirectoryPath else { return nil }
         return clean(url.lastPathComponent)
@@ -196,4 +210,52 @@ extension AmbientProvider {
     // Whether Sirius assembled this itself through Accessibility: there is
     // then no endpoint to ask and no watch to open on it.
     public var isNative: Bool { endpoint.scheme == AccessibilityContext.scheme }
+}
+
+// The apps that have given Sirius context as providers, their own or
+// through a helper, kept so Settings can list them with a switch each.
+// Sirius holds no list otherwise: it looks for the front app's descriptor
+// at each read. An app is noted the first time a read of it answers, and
+// is on until switched off; off, it is not asked.
+public enum ContextProviders {
+    public struct Seen: Codable, Equatable, Sendable, Identifiable {
+        public var id: String
+        public var name: String
+
+        public init(id: String, name: String) {
+            self.id = id
+            self.name = name
+        }
+    }
+
+    public static let key = "context.providers"
+    // The most apps remembered; the oldest are dropped past it.
+    public static let maxSeen = 100
+
+    public static func seen(in defaults: UserDefaults) -> [Seen] {
+        guard let data = defaults.data(forKey: key) else { return [] }
+        return (try? JSONDecoder().decode([Seen].self, from: data)) ?? []
+    }
+
+    // Remembers the app, or its new name. Returns whether anything changed.
+    @discardableResult
+    public static func note(id: String, name: String, in defaults: UserDefaults) -> Bool {
+        var all = seen(in: defaults)
+        if let index = all.firstIndex(where: { $0.id == id }) {
+            guard all[index].name != name else { return false }
+            all[index].name = name
+        } else {
+            all.append(Seen(id: id, name: name))
+            if all.count > maxSeen { all.removeFirst(all.count - maxSeen) }
+        }
+        guard let data = try? JSONEncoder().encode(all) else { return false }
+        defaults.set(data, forKey: key)
+        return true
+    }
+
+    public static func key(_ id: String) -> String { "context.provider.\(id)" }
+
+    public static func isOn(_ id: String, in defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: key(id)) == nil ? true : defaults.bool(forKey: key(id))
+    }
 }

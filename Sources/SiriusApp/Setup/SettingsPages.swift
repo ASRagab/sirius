@@ -71,6 +71,7 @@ struct SettingsView: View {
             } else {
                 AgentsPane(model: model)
             }
+        case .context: ContextPane(context: model.context)
         case .dictation: DictationPane(model: model)
         }
     }
@@ -366,5 +367,135 @@ private struct DictationPane: View {
                     .padding(.horizontal, 14)
             }
         }
+    }
+}
+
+// What the Context pane shows and changes: Sirius's defaults, read when the
+// pane opens. The composer and dictation read the same keys at each
+// message, so a switch takes effect at the next one.
+@MainActor
+final class ContextSettings: ObservableObject {
+    private let defaults: UserDefaults
+    // The apps that have given context as providers (ContextProviders).
+    let providers: [ContextProviders.Seen]
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        providers = ContextProviders.seen(in: defaults).sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
+    var enabled: Bool {
+        get { SettingsKeys.ambientContextEnabled(in: defaults) }
+        set { set(newValue, SettingsKeys.ambientContext) }
+    }
+
+    func isOn(_ app: NativeApp) -> Bool { NativeApps.isOn(app, in: defaults) }
+    func set(_ app: NativeApp, on: Bool) { set(on, NativeApps.key(app)) }
+    func isOn(_ provider: ContextProviders.Seen) -> Bool { ContextProviders.isOn(provider.id, in: defaults) }
+    func set(_ provider: ContextProviders.Seen, on: Bool) { set(on, ContextProviders.key(provider.id)) }
+
+    private func set(_ value: Bool, _ key: String) {
+        objectWillChange.send()
+        defaults.set(value, forKey: key)
+        SiriusLog.onboarding.info("settings: \(key) \(value ? "on" : "off")")
+    }
+}
+
+// The master switch, then the apps that give context themselves, then the
+// apps Sirius reads through Accessibility, each with a switch.
+private struct ContextPane: View {
+    @ObservedObject var context: ContextSettings
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                SettingsGroup("Context") { // TODO(copy): copy
+                    PillRow("Send context with messages") { // TODO(copy): copy
+                        PillSwitch(label: "Send context with messages", isOn: Binding(
+                            get: { context.enabled }, set: { context.enabled = $0 }))
+                    }
+                    // TODO(copy): copy
+                    Text("What you have open and selected in the app in front goes with your message. The composer shows it before you send.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    heading("Apps that provide context", // TODO(copy): copy
+                            note: "These apps tell Sirius what you have open themselves.") // TODO(copy): copy
+                    if context.providers.isEmpty {
+                        Text("None yet. An app appears here the first time it gives Sirius context.") // TODO(copy): copy
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    ForEach(context.providers) { provider in
+                        ContextAppRow(bundleID: provider.id, name: provider.name, note: nil, isOn: Binding(
+                            get: { context.isOn(provider) }, set: { context.set(provider, on: $0) }))
+                    }
+                }
+                .disabled(!context.enabled)
+                VStack(alignment: .leading, spacing: 10) {
+                    heading("Apps Sirius reads", // TODO(copy): copy
+                            // TODO(copy): copy
+                            note: "Sirius reads what is selected in these apps itself, through Accessibility.")
+                    ForEach(NativeApps.all, id: \.id) { app in
+                        ContextAppRow(bundleID: app.id, name: app.name,
+                                      note: app.sensitive ? "Often someone else's words. Off unless you turn it on." : nil, // TODO(copy): copy
+                                      isOn: Binding(get: { context.isOn(app) }, set: { context.set(app, on: $0) }))
+                    }
+                }
+                .disabled(!context.enabled)
+            }
+            .padding(.trailing, 4)
+        }
+        .scrollIndicators(.never)
+    }
+
+    private func heading(_ title: String, note: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.headline)
+            Text(note).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+// One app: its macOS icon, its name and a switch.
+private struct ContextAppRow: View {
+    let bundleID: String
+    let name: String
+    let note: String?
+    @Binding var isOn: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Group {
+                if let icon = Self.icon(bundleID) {
+                    Image(nsImage: icon).resizable().interpolation(.high)
+                } else {
+                    Image(systemName: "app.dashed").resizable().foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 22, height: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name)
+                if let note {
+                    Text(note).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 12)
+            PillSwitch(label: name, isOn: $isOn)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.04)))
+        .opacity(isEnabled ? 1 : 0.5)
+    }
+
+    private static func icon(_ bundleID: String) -> NSImage? {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
     }
 }

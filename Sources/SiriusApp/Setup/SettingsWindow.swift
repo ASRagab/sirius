@@ -104,13 +104,14 @@ final class SettingsWindow {
 
 // The sidebar's sections, in its order.
 enum SettingsSection: String, CaseIterable, Hashable {
-    case keys, permissions, agents, dictation
+    case keys, permissions, agents, context, dictation
 
     var title: String {
         switch self {
         case .keys: "Keys" // TODO(copy): copy
         case .permissions: "Permissions" // TODO(copy): copy
         case .agents: "Agents" // TODO(copy): copy
+        case .context: "Context" // TODO(copy): copy
         case .dictation: "Dictation" // TODO(copy): copy
         }
     }
@@ -120,6 +121,7 @@ enum SettingsSection: String, CaseIterable, Hashable {
         case .keys: "keyboard"
         case .permissions: "hand.raised"
         case .agents: "person.2"
+        case .context: "text.viewfinder"
         case .dictation: "mic"
         }
     }
@@ -134,6 +136,7 @@ final class SettingsModel: ObservableObject {
     let agents: [AgentChoice]
     let shortcuts: ShortcutsModel
     let grants = GrantsModel()
+    let context: ContextSettings
     let dictation: TranscriptionModel
     weak var window: NSWindow?
     var close: () -> Void = {}
@@ -145,15 +148,17 @@ final class SettingsModel: ObservableObject {
     private var forwarding: [AnyCancellable] = []
 
     init(agents: [AgentChoice], shortcuts: ShortcutsModel, dictation: TranscriptionModel,
-         section: SettingsSection = .keys,
+         section: SettingsSection = .keys, context: ContextSettings? = nil,
          write: @escaping (AgentRegistration) throws -> Void, onSave: @escaping () -> Void = {}) {
         self.agents = agents
         self.shortcuts = shortcuts
         self.dictation = dictation
         self.section = section
+        let context = context ?? ContextSettings()
+        self.context = context
         self.write = write
         self.onSave = onSave
-        let children = agents.map(\.objectWillChange) + [grants.objectWillChange, shortcuts.objectWillChange]
+        let children = agents.map(\.objectWillChange) + [grants.objectWillChange, shortcuts.objectWillChange, context.objectWillChange]
         forwarding = children.map { $0.sink { [weak self] _ in self?.objectWillChange.send() } }
     }
 

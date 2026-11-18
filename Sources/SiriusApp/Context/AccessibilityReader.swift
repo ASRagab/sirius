@@ -274,7 +274,15 @@ struct AccessibilityReader {
 // listed app that is switched on, Sirius's own read through Accessibility.
 enum FrontAppContext {
     static func read(pid: Int32, bundleID: String, defaults: UserDefaults = .standard) async -> AmbientSnapshot? {
-        if let answer = await AmbientContextSource().context(frontPID: pid, bundleID: bundleID) { return answer }
+        // A provider the user switched off in Settings is not asked.
+        guard ContextProviders.isOn(bundleID, in: defaults) else { return nil }
+        if let answer = await AmbientContextSource().context(frontPID: pid, bundleID: bundleID) {
+            // Remembered, so Settings can list it: the app in front, which
+            // a helper may have answered for.
+            let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? answer.appName
+            ContextProviders.note(id: bundleID, name: name, in: defaults)
+            return answer
+        }
         guard let app = NativeApps.app(bundleID), NativeApps.isOn(app, in: defaults), AccessibilityReader.isTrusted
         else { return nil }
         return await Task.detached(priority: .userInitiated) {

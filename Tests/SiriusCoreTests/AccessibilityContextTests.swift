@@ -30,6 +30,34 @@ final class AccessibilityContextTests: XCTestCase {
         XCTAssertNil(answer.helper)
     }
 
+    func testPreviewSaysWhatKindOfFileIsOpen() throws {
+        func kind(_ url: String?) throws -> String? {
+            try XCTUnwrap(try snapshot(AccessibilityReading(windowTitle: "w", documentURL: url), "com.apple.Preview"))
+                .tree.focusPath[1].subrole
+        }
+        XCTAssertEqual(try kind("file:///r/2026-11-12_2026-11-18.png"), "image")
+        XCTAssertEqual(try kind("file:///r/photo.JPEG"), "image")
+        XCTAssertEqual(try kind("file:///r/a.pdf"), "pdf")
+        XCTAssertEqual(try kind("file:///r/a.txt"), "file")
+        XCTAssertEqual(try kind(nil), "file")
+    }
+
+    func testContextProvidersAreRememberedOnceAndSwitchedOff() throws {
+        let suite = "sirius-providers-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(ContextProviders.seen(in: defaults), [])
+        XCTAssertTrue(ContextProviders.note(id: "a.b", name: "B", in: defaults))
+        XCTAssertFalse(ContextProviders.note(id: "a.b", name: "B", in: defaults))
+        XCTAssertTrue(ContextProviders.note(id: "a.b", name: "Bee", in: defaults))
+        XCTAssertTrue(ContextProviders.note(id: "c.d", name: "D", in: defaults))
+        XCTAssertEqual(ContextProviders.seen(in: defaults), [.init(id: "a.b", name: "Bee"), .init(id: "c.d", name: "D")])
+        XCTAssertTrue(ContextProviders.isOn("a.b", in: defaults))
+        defaults.set(false, forKey: ContextProviders.key("a.b"))
+        XCTAssertFalse(ContextProviders.isOn("a.b", in: defaults))
+        XCTAssertTrue(ContextProviders.isOn("never.seen", in: defaults))
+    }
+
     func testAPageKeepsItsOwnTitleAndAddress() throws {
         let reading = AccessibilityReading(
             windowTitle: "Window", documentURL: "https://example.com/a", documentTitle: "A page", selectedText: "x")
