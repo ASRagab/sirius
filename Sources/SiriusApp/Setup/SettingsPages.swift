@@ -337,15 +337,32 @@ private struct AgentDetail: View {
                 PillRow("Model") { // TODO(copy): copy
                     PillMenu(title: agent.modelLabel(agent.model)) {
                         ForEach(agent.modelOptions, id: \.self) { option in
-                            Button(agent.modelLabel(option)) { agent.model = option; model.save(agent) }
+                            Button {
+                                agent.model = option
+                                model.save(agent)
+                            } label: {
+                                if let logo = agent.modelMaker(option).flatMap(AgentMarks.maker) {
+                                    Label { Text(agent.modelLabel(option)) } icon: { Image(nsImage: logo) }
+                                } else {
+                                    Text(agent.modelLabel(option))
+                                }
+                            }
                         }
                     }
                 }
-                PillRow("Effort") { // TODO(copy): copy
-                    PillMenu(title: AgentChoice.effortLabel(agent.effort)) {
-                        ForEach(agent.effortOptions, id: \.self) { option in
-                            Button(AgentChoice.effortLabel(option)) { agent.effort = option; model.save(agent) }
+                if agent.takesEffort {
+                    PillRow("Effort") { // TODO(copy): copy
+                        PillMenu(title: AgentChoice.effortLabel(agent.effort)) {
+                            ForEach(agent.effortOptions, id: \.self) { option in
+                                Button(AgentChoice.effortLabel(option)) { agent.effort = option; model.save(agent) }
+                            }
                         }
+                    }
+                } else {
+                    // TODO(copy): copy
+                    PillRow("Effort", note: "\(AgentChoice.product(agent.harness)) sets it with the model.") {
+                        PillMenu(title: "Set by model") {} // TODO(copy): copy
+                            .disabled(true)
                     }
                 }
             }

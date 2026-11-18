@@ -63,6 +63,26 @@ enum AgentMarks {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    private static var makers: [AgentChoice.Maker: NSImage] = [:]
+
+    // A model maker's logo for a menu row: marks/makers/<maker>.svg, 14
+    // points high and a template, so the menu tints it as it does its text.
+    // nil without the file, and the row is then the name alone.
+    static func maker(_ maker: AgentChoice.Maker) -> NSImage? {
+        if let image = makers[maker] { return image }
+        let url = directory.appendingPathComponent("makers/\(maker.rawValue).svg")
+        guard let source = NSImage(contentsOf: url), source.isValid, source.size.height > 0 else { return nil }
+        let height: CGFloat = 14
+        let size = NSSize(width: (source.size.width / source.size.height * height).rounded(), height: height)
+        let image = NSImage(size: size, flipped: false) { rect in
+            source.draw(in: rect)
+            return true
+        }
+        image.isTemplate = true
+        makers[maker] = image
+        return image
+    }
+
     private static func sparkle(_ agent: String) -> NSImage? {
         NSImage(systemSymbolName: "sparkle", accessibilityDescription: agent)
     }

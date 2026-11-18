@@ -253,15 +253,14 @@ extension AgentChoice {
     // The efforts each harness's CLI takes: Claude Code's --effort and
     // Codex's model_reasoning_effort, and Muse Code's reasoningEffort
     // without "none", which Meta's provider refuses. Antigravity's are
-    // its thinking levels; Cursor's models carry their effort in their
-    // own name ("gemini-4-carbon[reasoning_effort=high]"), so it has none here.
+    // the three thinking levels agy 1.5.11 offers; Cursor has none (see takesEffort).
     static func efforts(_ harness: AgentRegistration.Harness) -> [String] {
         switch harness {
         case .claudeCode: ["low", "medium", "high", "xhigh", "max"]
         case .codex: ["minimal", "low", "medium", "high", "xhigh"]
         case .museCode: ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
         case .cursor: []
-        case .antigravity: ["low", "medium", "high", "xhigh", "max"]
+        case .antigravity: ["low", "medium", "high"]
         }
     }
 
@@ -273,31 +272,92 @@ extension AgentChoice {
         return options
     }
 
+    // Who makes a model, for the harnesses that carry several makers'
+    // models: its logo is packaging/marks/makers/<maker>.svg.
+    enum Maker: String, CaseIterable {
+        case anthropic, openai, google, xai, meta, cursor
+    }
+
+    struct Model: Equatable {
+        var id: String
+        var name: String
+        // nil where the harness has one maker, so the menu needs no logo.
+        var maker: Maker?
+
+        init(_ id: String, _ name: String, _ maker: Maker? = nil) {
+            self.id = id
+            self.name = name
+            self.maker = maker
+        }
+    }
+
     // The main models of each harness, newest first, with the names their
     // makers give them. A convenience, not a limit: agent.json takes any
     // id, and one that is not here still shows in the menu. Checked
     // 2026.11.18: Claude's ids are Anthropic's current ones; Codex's are
     // the slugs in codex-cli 0.159.1's own list, and gpt-6.2-astra from a
-    // working config. Muse's, Cursor's and Antigravity's are not known, so
-    // they have none.
-    static func models(_ harness: AgentRegistration.Harness) -> [(id: String, name: String)] {
+    // working config. Cursor's are the names a signed-in `agent acp`
+    // session (2026.08.11) offers, the main ones of each maker out of its
+    // fifty; Antigravity's are the four a free account's `agy acp` session
+    // (1.5.11) offers, so the Gemini 4 models of a paid plan are not here.
+    // Muse's are not known, so it has none.
+    static func models(_ harness: AgentRegistration.Harness) -> [Model] {
         switch harness {
         case .claudeCode: [
-            ("claude-fable-5-2", "Fable 5.2"),
-            ("claude-opus-5-5", "Opus 5.5"),
-            ("claude-sonnet-5-5", "Sonnet 5.5"),
-            ("claude-haiku-5-5", "Haiku 5.5"),
+            Model("claude-fable-5-2", "Fable 5.2"),
+            Model("claude-opus-5-5", "Opus 5.5"),
+            Model("claude-sonnet-5-5", "Sonnet 5.5"),
+            Model("claude-haiku-5-5", "Haiku 5.5"),
         ]
         case .codex: [
-            ("gpt-6.2-astra", "GPT-6.2 Astra"),
-            ("gpt-6.1-sol", "GPT-6.1 Sol"),
-            ("gpt-6-astra", "GPT-6 Astra"),
-            ("gpt-6-sol", "GPT-6 Sol"),
-            ("gpt-6-luna", "GPT-6 Luna"),
+            Model("gpt-6.2-astra", "GPT-6.2 Astra"),
+            Model("gpt-6.1-sol", "GPT-6.1 Sol"),
+            Model("gpt-6-astra", "GPT-6 Astra"),
+            Model("gpt-6-sol", "GPT-6 Sol"),
+            Model("gpt-6-luna", "GPT-6 Luna"),
         ]
-        case .museCode, .cursor, .antigravity: []
+        case .museCode: []
+        case .cursor: [
+            Model("composer-2.5", "Composer 2.5", .cursor),
+            Model("claude-fable-5-2", "Claude Fable 5.2", .anthropic),
+            Model("claude-opus-5-5", "Claude Opus 5.5", .anthropic),
+            Model("claude-sonnet-5-5", "Claude Sonnet 5.5", .anthropic),
+            Model("claude-haiku-5-5", "Claude Haiku 5.5", .anthropic),
+            Model("gpt-5.6-sol", "GPT-5.6 Sol", .openai),
+            Model("gpt-5.6-terra", "GPT-5.6 Terra", .openai),
+            Model("gpt-5.6-luna", "GPT-5.6 Luna", .openai),
+            Model("gpt-5.3-codex", "GPT-5.3 Codex", .openai),
+            Model("gemini-4-neon", "Gemini 4 Neon", .google),
+            Model("gemini-4-carbon", "Gemini 4 Carbon", .google),
+            Model("gemini-4-hydrogen", "Gemini 4 Hydrogen", .google),
+            Model("gemini-4-argon", "Gemini 4 Argon", .google),
+            Model("gemini-3.8-flash", "Gemini 3.8 Flash", .google),
+            Model("grok-4.7", "Grok 4.7", .xai),
+            Model("muse-wonder-1.0", "Muse Wonder 1.0", .meta),
+            Model("muse-spark-1.3", "Muse Spark 1.3", .meta),
+        ]
+        case .antigravity: [
+            Model("gemini-3.8-flash", "Gemini 3.8 Flash", .google),
+            Model("claude-opus-4-6-thinking", "Claude Opus 4.6", .anthropic),
+            Model("claude-sonnet-4-6", "Claude Sonnet 4.6", .anthropic),
+            Model("gpt-oss-120b-medium", "GPT-OSS 120B", .openai),
+        ]
         }
     }
+
+    // The maker whose logo sits beside a model in the menu; nil for Default,
+    // a model written by hand, and the one-maker harnesses.
+    func modelMaker(_ model: String?) -> Maker? {
+        guard let model else { return nil }
+        return Self.models(harness).first { $0.id == model }?.maker
+    }
+
+    // Whether the Effort menu does anything. Cursor's does not: over ACP
+    // each of its models comes at one effort ("claude-opus-5-5[effort=medium,
+    // …]") and the server refuses any other value (checked on 2026.08.11);
+    // only its --model flag takes another, and that flag rewrites the
+    // person's own default model in ~/.cursor/cli-config.json.
+    var takesEffort: Bool { harness != .cursor }
 
     // The Model menu: nil (the user's default), the harness's main models,
     // and one written by hand that is not among them, kept so it shows.

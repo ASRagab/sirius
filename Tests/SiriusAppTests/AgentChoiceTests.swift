@@ -112,6 +112,46 @@ final class AgentChoiceSettingsTests: XCTestCase {
         XCTAssertEqual(registered(.codex).modelLabel("claude-opus-5-5"), "claude-opus-5-5")
     }
 
+    func testCursorAndAntigravityListModelsOfSeveralMakers() {
+        let cursor = registered(.cursor)
+        XCTAssertEqual(cursor.modelOptions.first, .some(nil))
+        XCTAssertEqual(cursor.modelLabel("claude-opus-5-5"), "Claude Opus 5.5")
+        XCTAssertEqual(cursor.modelMaker("claude-opus-5-5"), .anthropic)
+        XCTAssertEqual(cursor.modelMaker("gpt-5.6-sol"), .openai)
+        XCTAssertEqual(cursor.modelMaker("gemini-4-neon"), .google)
+        XCTAssertEqual(cursor.modelMaker("grok-4.7"), .xai)
+        XCTAssertEqual(cursor.modelMaker("muse-wonder-1.0"), .meta)
+        XCTAssertEqual(cursor.modelMaker("composer-2.5"), .cursor)
+        XCTAssertNil(cursor.modelMaker(nil))
+        XCTAssertNil(cursor.modelMaker("my-own-model"))
+        let gemini = registered(.antigravity)
+        XCTAssertEqual(gemini.modelLabel("gemini-3.8-flash"), "Gemini 3.8 Flash")
+        XCTAssertEqual(gemini.modelMaker("claude-sonnet-4-6"), .anthropic)
+        // One maker, no logo.
+        XCTAssertNil(registered(.claudeCode).modelMaker("claude-opus-5-5"))
+        for harness in AgentRegistration.Harness.allCases {
+            let ids = AgentChoice.models(harness).map(\.id)
+            XCTAssertEqual(Set(ids).count, ids.count, "\(harness) lists a model twice")
+        }
+    }
+
+    // Every maker a model names has its logo file.
+    func testEveryMakerHasALogoFile() {
+        let makers = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("packaging/marks/makers")
+        for maker in AgentChoice.Maker.allCases {
+            let file = makers.appendingPathComponent("\(maker.rawValue).svg")
+            XCTAssertNotNil(NSImage(contentsOf: file), "\(maker.rawValue).svg")
+        }
+    }
+
+    func testCursorTakesNoEffortAndTheOthersDo() {
+        XCTAssertFalse(registered(.cursor).takesEffort)
+        XCTAssertEqual(registered(.cursor, effort: nil).effortOptions, [nil])
+        XCTAssertTrue(registered(.antigravity).takesEffort)
+        XCTAssertTrue(registered(.claudeCode).takesEffort)
+    }
+
     func testRegistrationCarriesTheEditsAndKeepsTheRest() {
         let current = AgentRegistration(agent: "claude", name: "Claude", harness: .claudeCode, executable: "/bin/sh",
                                         root: "/Users/u/w", voice: "Samantha", effort: "low",
