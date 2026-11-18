@@ -16,8 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // own font.
     static var manualTitle: NSAttributedString {
         let font = NSFont.menuFont(ofSize: 0)
-        let title = NSMutableAttributedString(string: "Open manual", attributes: [.font: font]) // TODO(copy): copy
-        title.append(NSAttributedString(string: "\u{2009}\u{2197}\u{FE0E}", attributes: [
+        // A full space before the arrow, at the title's size, so it does
+        // not touch the word.
+        let title = NSMutableAttributedString(string: "Open manual ", attributes: [.font: font]) // TODO(copy): copy
+        title.append(NSAttributedString(string: "\u{2197}\u{FE0E}", attributes: [
             .font: NSFont.menuFont(ofSize: font.pointSize * 0.7),
             .baselineOffset: font.pointSize * 0.35,
         ]))
