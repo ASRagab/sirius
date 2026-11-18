@@ -1,0 +1,24 @@
+# Vercel Root Directory is landing/; upload nothing else from the repo.
+.heap
+.build
+.claude
+.issues
+.journal
+.marina
+.notes
+.plan
+.tasks
+.swiftpm
+.env.local
+build
+dist
+docs
+evals
+packaging
+scripts
+Sources
+Tests
+Package.swift
+Package.resolved
+landing/.src
+landing/README.md
