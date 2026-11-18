@@ -146,7 +146,9 @@ public enum AccessibilityContext {
                 return AmbientElement(id: "file-\(index + 1)", role: "Row", subrole: "file", title: name, url: url,
                                       selected: true, focused: index == 0)
             }
-            let url = clean(reading.documentURL)
+            // Finder gives a window no address, so the folder's is the one
+            // its selected files share.
+            let url = clean(reading.documentURL) ?? sharedFolder(reading.items.compactMap { clean($0.url) })
             guard title != nil || url != nil || !rows.isEmpty else { return nil }
             inner = AmbientElement(id: "folder", role: "List", subrole: "folder", title: clean(reading.documentTitle) ?? title,
                                    url: url, focused: true, children: rows)
@@ -185,6 +187,15 @@ public enum AccessibilityContext {
         if ext == "pdf" { return "pdf" }
         if imageExtensions.contains(ext) { return "image" }
         return ext.isEmpty ? nil : "file"
+    }
+
+    // The folder every one of these files is directly in, as an address.
+    static func sharedFolder(_ addresses: [String]) -> String? {
+        let folders = Set(addresses.compactMap { address -> String? in
+            guard let url = URL(string: address), url.isFileURL else { return nil }
+            return url.deletingLastPathComponent().absoluteString
+        })
+        return folders.count == 1 && !addresses.isEmpty ? folders.first : nil
     }
 
     private static func fileName(_ address: String?) -> String? {

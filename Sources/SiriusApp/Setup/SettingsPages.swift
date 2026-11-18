@@ -412,8 +412,8 @@ private struct ContextPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 SettingsGroup("Context") { // TODO(copy): copy
-                    PillRow("Send context with messages") { // TODO(copy): copy
-                        PillSwitch(label: "Send context with messages", isOn: Binding(
+                    PillRow("Send ambient context") { // TODO(copy): copy
+                        PillSwitch(label: "Send ambient context", isOn: Binding(
                             get: { context.enabled }, set: { context.enabled = $0 }))
                     }
                     // TODO(copy): copy

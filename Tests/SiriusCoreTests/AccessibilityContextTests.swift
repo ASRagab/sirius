@@ -88,6 +88,10 @@ final class AccessibilityContextTests: XCTestCase {
         let rows = answer.tree.selected
         XCTAssertEqual(rows.map(\.role), ["Row", "Row"])
         XCTAssertEqual(rows.map(\.url), ["file:///d/a.txt", "file:///d/b.txt"])
+        // The folder's address is the one its selected files share.
+        XCTAssertEqual(answer.tree.focusPath[1].url, "file:///d/")
+        XCTAssertNil(AccessibilityContext.sharedFolder(["file:///d/a.txt", "file:///e/b.txt"]))
+        XCTAssertNil(AccessibilityContext.sharedFolder([]))
         XCTAssertEqual(answer.summary, AmbientSummary(subject: "Downloads", selection: "2 selected"))
 
         let one = AccessibilityReading(windowTitle: "Downloads", items: [.init(title: "a.txt", url: "file:///d/a.txt")])
