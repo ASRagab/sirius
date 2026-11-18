@@ -333,9 +333,9 @@ private struct AgentDetail: View {
                     ))
                 }
                 PillRow("Model") { // TODO(copy): copy
-                    PillMenu(title: AgentChoice.modelLabel(agent.model)) {
+                    PillMenu(title: agent.modelLabel(agent.model)) {
                         ForEach(agent.modelOptions, id: \.self) { option in
-                            Button(AgentChoice.modelLabel(option)) { agent.model = option; model.save(agent) }
+                            Button(agent.modelLabel(option)) { agent.model = option; model.save(agent) }
                         }
                     }
                 }

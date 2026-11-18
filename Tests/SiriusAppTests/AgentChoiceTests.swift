@@ -92,9 +92,24 @@ final class AgentChoiceSettingsTests: XCTestCase {
         XCTAssertEqual(registered(.codex, effort: "turbo").effortOptions.last, "turbo")
     }
 
-    func testModelOptionsAreDefaultAndTheRegisteredOne() {
-        XCTAssertEqual(registered(.claudeCode).modelOptions, [nil])
-        XCTAssertEqual(registered(.claudeCode, model: "claude-opus-5-5").modelOptions, [nil, "claude-opus-5-5"])
+    func testModelOptionsAreDefaultTheMainModelsAndAHandWrittenOne() {
+        let claude = [nil, "claude-fable-5-2", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
+        XCTAssertEqual(registered(.claudeCode).modelOptions, claude)
+        XCTAssertEqual(registered(.claudeCode, model: "claude-opus-5-5").modelOptions, claude)
+        XCTAssertEqual(registered(.claudeCode, model: "my-own-model").modelOptions, claude + ["my-own-model"])
+        XCTAssertEqual(registered(.codex).modelOptions.count, 6)
+        XCTAssertEqual(registered(.museCode).modelOptions, [nil])
+        XCTAssertEqual(registered(.museCode, model: "muse-x").modelOptions, [nil, "muse-x"])
+    }
+
+    func testAModelIsShownByItsMakersName() {
+        let claude = registered(.claudeCode)
+        XCTAssertEqual(claude.modelLabel(nil), "Default")
+        XCTAssertEqual(claude.modelLabel("claude-fable-5-2"), "Fable 5.2")
+        XCTAssertEqual(claude.modelLabel("my-own-model"), "my-own-model")
+        XCTAssertEqual(registered(.codex).modelLabel("gpt-6.1-sol"), "GPT-6.1 Sol")
+        // Another harness's id is not this one's model.
+        XCTAssertEqual(registered(.codex).modelLabel("claude-opus-5-5"), "claude-opus-5-5")
     }
 
     func testRegistrationCarriesTheEditsAndKeepsTheRest() {

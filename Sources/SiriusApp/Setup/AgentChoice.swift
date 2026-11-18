@@ -273,11 +273,44 @@ extension AgentChoice {
         return options
     }
 
-    // The Model menu: nil (the user's default) and the model agent.json
-    // names, if any. Sirius has no list of the harnesses' models.
+    // The main models of each harness, newest first, with the names their
+    // makers give them. A convenience, not a limit: agent.json takes any
+    // id, and one that is not here still shows in the menu. Checked
+    // 2026.11.18: Claude's ids are Anthropic's current ones; Codex's are
+    // the slugs in codex-cli 0.159.1's own list, and gpt-6.2-astra from a
+    // working config. Muse's are not known, so it has none.
+    static func models(_ harness: AgentRegistration.Harness) -> [(id: String, name: String)] {
+        switch harness {
+        case .claudeCode: [
+            ("claude-fable-5-2", "Fable 5.2"),
+            ("claude-opus-5-5", "Opus 5.5"),
+            ("claude-sonnet-5-5", "Sonnet 5.5"),
+            ("claude-haiku-5-5", "Haiku 5.5"),
+        ]
+        case .codex: [
+            ("gpt-6.2-astra", "GPT-6.2 Astra"),
+            ("gpt-6.1-sol", "GPT-6.1 Sol"),
+            ("gpt-6-astra", "GPT-6 Astra"),
+            ("gpt-6-sol", "GPT-6 Sol"),
+            ("gpt-6-luna", "GPT-6 Luna"),
+        ]
+        case .museCode: []
+        }
+    }
+
+    // The Model menu: nil (the user's default), the harness's main models,
+    // and one written by hand that is not among them, kept so it shows.
     var modelOptions: [String?] {
-        guard let model else { return [nil] }
-        return [nil, model]
+        let known = Self.models(harness).map(\.id)
+        var options: [String?] = [nil] + known.map { $0 }
+        if let model, !known.contains(model) { options.append(model) }
+        return options
+    }
+
+    // A model's name in the menu: its maker's name, or the id as written.
+    func modelLabel(_ model: String?) -> String {
+        guard let model else { return "Default" } // TODO(copy): copy
+        return Self.models(harness).first { $0.id == model }?.name ?? model
     }
 
     static func effortLabel(_ effort: String?) -> String {
@@ -288,9 +321,6 @@ extension AgentChoice {
         }
     }
 
-    static func modelLabel(_ model: String?) -> String {
-        model ?? "Default" // TODO(copy): copy
-    }
 }
 
 extension AgentRegistry {
