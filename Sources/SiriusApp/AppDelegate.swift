@@ -75,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The manual's PDF, just above Quit, so it can be read when no agent
         // answers. Absent from a bare `swift build`, which has no bundle to
         // hold it.
-        let manual = NSMenuItem(title: "Open Manual", action: #selector(showManual(_:)), keyEquivalent: "")
+        let manual = NSMenuItem(title: "Open manual \u{2197}\u{FE0E}", action: #selector(showManual(_:)), keyEquivalent: "")
         manual.target = self
         manual.isHidden = !FileManager.default.fileExists(atPath: Self.manualURL.path)
         menu.addItem(manual)

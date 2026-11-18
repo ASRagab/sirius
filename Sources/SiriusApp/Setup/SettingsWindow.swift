@@ -24,6 +24,7 @@ import SwiftUI
 @MainActor
 final class SettingsWindow {
     static let size = NSSize(width: 700, height: 560)
+    static let maxSize = NSSize(width: 1000, height: 1100)
 
     private let registry: AgentRegistry
     private let detector: AgentDetector
@@ -53,8 +54,12 @@ final class SettingsWindow {
                                   write: { try registry.register($0) }, onSave: onSave)
         self.model = model
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.size),
-                              styleMask: [.titled, .closable, .fullSizeContentView],
+                              styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
+        // Never smaller than the size the panes were laid out for; larger
+        // gives the rows more room and Context's list more height.
+        window.contentMinSize = Self.size
+        window.contentMaxSize = Self.maxSize
         window.title = "Sirius Settings" // TODO(copy): copy
         // The sidebar says it; the title still names the window in Mission
         // Control and the window switcher.

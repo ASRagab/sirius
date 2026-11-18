@@ -30,7 +30,8 @@ struct SettingsView: View {
             .padding(.bottom, 32)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: SettingsWindow.size.width, height: SettingsWindow.size.height)
+        .frame(minWidth: SettingsWindow.size.width, maxWidth: .infinity,
+               minHeight: SettingsWindow.size.height, maxHeight: .infinity)
         .background {
             ZStack {
                 Color(nsColor: .windowBackgroundColor)
