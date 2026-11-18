@@ -1,4 +1,4 @@
-# Sirius Manual
+# Sirius — Manual
 
 Sirius lets you talk to the coding agent you already use, from anywhere on your Mac. Hold a key and speak, or press a shortcut and type. The agent works in its own folder and answers with a small toast, a notification or a spoken line, so you can keep doing what you were doing.
 
