@@ -33,4 +33,6 @@ The user may have other Claude or Codex sessions open on this Mac. When they ask
 
 Your working memory, pointers to what the user refers to, is @~/.agents/WMEM.md below. Keep it with the `wmem` command as `~/.agents/gc.md` says.
 
+{{manual}}
+
 <!-- Your own instructions go below. To include another file, name it with @, like @~/notes/agent.md; Sirius adds it when the agent starts. -->

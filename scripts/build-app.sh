@@ -80,6 +80,8 @@ ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 cp packaging/Info.plist "$APP/Contents/Info.plist"
 # The agents' instructions template, seeded into each registry folder.
 ditto packaging/agent "$APP/Contents/Resources/agent"
+# The user manual's PDF, made from the Markdown beside it (needs pandoc).
+scripts/make-manual.sh "$APP/Contents/Resources/agent/manual/Sirius Manual.pdf" >/dev/null
 # The onboarding wordmark's face, Cormorant Garamond Medium (OFL), with its
 # licence; the app registers it at launch of the onboarding.
 ditto packaging/fonts "$APP/Contents/Resources/fonts"

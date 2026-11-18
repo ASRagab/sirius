@@ -154,6 +154,29 @@ public actor AgentHost {
         if registry.seedInstructions(for: scan.agents, templates: templatesDirectory, report: report) {
             wrote = true
         }
+        // The manual: its copy at the fixed path, and one mention of it for
+        // an agent whose instructions predate it. After the seeding, so a new
+        // agent's instructions already carry the section.
+        if !scan.agents.isEmpty {
+            do {
+                try Instructions.refreshManual(
+                    into: storageDirectory.appendingPathComponent(Instructions.manual, isDirectory: true),
+                    templates: templatesDirectory)
+            } catch {
+                report("Sirius: couldn't write the manual: \(error)")
+            }
+        }
+        for agent in scan.agents {
+            let marker = storageDirectory.appendingPathComponent(agent.registration.agent, isDirectory: true)
+                .appendingPathComponent("manual-offered")
+            do {
+                if try Instructions.offerManual(folder: agent.directory, templates: templatesDirectory, marker: marker) {
+                    wrote = true
+                }
+            } catch {
+                report("Sirius: \(agent.registration.agent): couldn't add the manual to its instructions: \(error)")
+            }
+        }
         return wrote ? registry.loadAll() : scan
     }
 

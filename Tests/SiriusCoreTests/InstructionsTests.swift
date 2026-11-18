@@ -151,4 +151,71 @@ final class InstructionsTests: XCTestCase {
         XCTAssertTrue(try seed())
         XCTAssertFalse(FileManager.default.fileExists(atPath: base.appendingPathComponent("agent/workers.md").path))
     }
+
+    func testTheManualsCopyIsRewrittenWhenItDiffersAndOtherFilesAreLeft() throws {
+        try write("# Manual", "t/manual/index.md")
+        try write("pdf", "t/manual/Sirius Manual.pdf")
+        let templates = base.appendingPathComponent("t")
+        let copy = base.appendingPathComponent("support/manual")
+        XCTAssertTrue(try Instructions.refreshManual(into: copy, templates: templates))
+        XCTAssertEqual(try read("support/manual/index.md"), "# Manual")
+        XCTAssertEqual(try read("support/manual/Sirius Manual.pdf"), "pdf")
+        XCTAssertFalse(try Instructions.refreshManual(into: copy, templates: templates))
+
+        try write("stale", "support/manual/index.md")
+        try write("mine", "support/manual/state.json")
+        XCTAssertTrue(try Instructions.refreshManual(into: copy, templates: templates))
+        XCTAssertEqual(try read("support/manual/index.md"), "# Manual")
+        XCTAssertEqual(try read("support/manual/state.json"), "mine")
+
+        // No bundled manual: nothing is written.
+        XCTAssertFalse(try Instructions.refreshManual(into: copy, templates: base.appendingPathComponent("none")))
+    }
+
+    private func offer() throws -> Bool {
+        try Instructions.offerManual(folder: base.appendingPathComponent("agent"),
+                                     templates: base.appendingPathComponent("t"),
+                                     marker: base.appendingPathComponent("support/agent/manual-offered"))
+    }
+
+    func testExistingInstructionsGainTheManualSectionOnceAndADeletedOneStaysDeleted() throws {
+        try write("## The manual\n\nIt is at `x/manual/index.md`.\n", "t/manual.md")
+        // No instructions yet: nothing happens, and it is not marked as done.
+        XCTAssertFalse(try offer())
+        try write("# Mine\n\nMy rules.\n", "agent/instructions.md")
+        XCTAssertTrue(try offer())
+        XCTAssertEqual(try read("agent/instructions.md"),
+                       "# Mine\n\nMy rules.\n\n## The manual\n\nIt is at `x/manual/index.md`.\n")
+        XCTAssertFalse(try offer())
+
+        // The user deletes the section: it does not come back.
+        try write("# Mine\n", "agent/instructions.md")
+        XCTAssertFalse(try offer())
+        XCTAssertEqual(try read("agent/instructions.md"), "# Mine\n")
+    }
+
+    func testInstructionsThatAlreadyNameTheManualAreLeftAsTheyAre() throws {
+        try write("## The manual\n\nIt is at `x/manual/index.md`.\n", "t/manual.md")
+        try write("# Mine\nSee manual/index.md, in my words.\n", "agent/instructions.md")
+        XCTAssertFalse(try offer())
+        XCTAssertEqual(try read("agent/instructions.md"), "# Mine\nSee manual/index.md, in my words.\n")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: base.appendingPathComponent("support/agent/manual-offered").path))
+    }
+
+    // The shipped template carries the section for new agents, from the one
+    // part an existing agent is offered, and Codex's workers are not told.
+    func testTheShippedTemplateSeedsTheManualSection() throws {
+        let agent = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("packaging/agent", isDirectory: true)
+        let folder = base.appendingPathComponent("agent")
+        XCTAssertTrue(try Instructions.seed(folder: folder, template: agent.appendingPathComponent("instructions.md"),
+                                            harness: agent.appendingPathComponent("codex")))
+        let path = "~/Library/Application Support/Sirius/agents/manual/index.md"
+        XCTAssertTrue(try read("agent/instructions.md").contains(path))
+        XCTAssertFalse(try read("agent/workers.md").contains(path))
+        XCTAssertFalse(try Instructions.offerManual(folder: folder, templates: agent,
+                                                    marker: base.appendingPathComponent("support/agent/manual-offered")))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: agent.appendingPathComponent("manual/index.md").path))
+    }
 }

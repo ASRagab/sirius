@@ -1,4 +1,5 @@
 import AppKit
+import SiriusAdapters
 import SiriusCore
 
 // The status item and its menu. Everything else the app shows is a panel.
@@ -70,6 +71,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updates.target = self
         updates.isHidden = !Updater.isRunning
         menu.addItem(updates)
+        // The manual's PDF, so it can be read when no agent answers. Absent
+        // from a bare `swift build`, which has no bundle to hold it.
+        let manual = NSMenuItem(title: "Sirius Manual", action: #selector(showManual(_:)), keyEquivalent: "")
+        manual.target = self
+        manual.isHidden = !FileManager.default.fileExists(atPath: Self.manualURL.path)
+        menu.addItem(manual)
         menu.addItem(.separator())
         // Its own selector: macOS 26 gives items whose action is
         // `terminate(_:)` an xmark icon.
@@ -137,6 +144,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleSlow(_ item: NSMenuItem) {
         SpatialMotion.timeScale = SpatialMotion.timeScale > 1 ? 1 : 10
+    }
+
+    static var manualURL: URL {
+        AgentHost.templatesDirectory()
+            .appendingPathComponent(Instructions.manual, isDirectory: true)
+            .appendingPathComponent("Sirius Manual.pdf")
+    }
+
+    @objc private func showManual(_ item: NSMenuItem) {
+        NSWorkspace.shared.open(Self.manualURL)
     }
 
     @objc private func checkForUpdates(_ item: NSMenuItem) {

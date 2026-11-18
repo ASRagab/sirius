@@ -210,6 +210,61 @@ public enum Instructions {
         return wrote
     }
 
+    // The user manual: packaging/agent/manual in the app's templates, index.md
+    // with any other sections and the PDF beside it. Agents are pointed at a
+    // copy at a path that is the same on every Mac (Sirius's agents folder in
+    // Application Support, `folder` here), since the app itself may be
+    // anywhere. Makes each file of the bundled manual equal there, writing
+    // only what is missing or differs; anything else in the folder is left
+    // alone. Returns whether it wrote.
+    public static let manual = "manual"
+
+    @discardableResult
+    public static func refreshManual(into folder: URL, templates: URL) throws -> Bool {
+        let source = templates.appendingPathComponent(manual, isDirectory: true)
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: source.path)) ?? []).sorted()
+        var wrote = false
+        for name in names where !name.hasPrefix(".") {
+            let from = source.appendingPathComponent(name)
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: from.path, isDirectory: &isDirectory), !isDirectory.boolValue,
+                  let data = try? Data(contentsOf: from) else { continue }
+            let target = folder.appendingPathComponent(name)
+            if (try? Data(contentsOf: target)) == data { continue }
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: target, options: .atomic)
+            wrote = true
+        }
+        return wrote
+    }
+
+    // What an agent is told of the manual is a section of its own
+    // instructions.md (the template's {{manual}}, from manual.md), the
+    // user's to reword or delete. An agent set up before the manual shipped
+    // lacks it, so it is added to the end of its instructions.md once:
+    // `marker` is an empty file written the first time this runs for an
+    // agent that has instructions, and nothing is added after that, so a
+    // section the user deleted stays deleted. Instructions that already name
+    // the manual are left as they are. Returns whether instructions.md was
+    // written.
+    @discardableResult
+    public static func offerManual(folder: URL, templates: URL, marker: URL) throws -> Bool {
+        let target = folder.appendingPathComponent(entrypoint)
+        guard !FileManager.default.fileExists(atPath: marker.path), let text = read(target),
+              let section = read(templates.appendingPathComponent(manual + ".md"))?
+                  .trimmingCharacters(in: .whitespacesAndNewlines), !section.isEmpty else { return false }
+        var wrote = false
+        if !text.contains(manual + "/index.md") {
+            let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            try ((body.isEmpty ? "" : body + "\n\n") + section + "\n").write(to: target, atomically: true, encoding: .utf8)
+            wrote = true
+        }
+        try FileManager.default.createDirectory(at: marker.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        try Data().write(to: marker)
+        return wrote
+    }
+
     // Template slots, filled from the first folder with <name>.md.
     private static func fill(_ text: String, parts: [URL], depth: Int) -> String {
         fill(text) { name in

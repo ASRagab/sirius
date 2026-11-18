@@ -79,9 +79,15 @@ final class AgentHostTests: XCTestCase {
         let alpha = try XCTUnwrap(adapters.adapter("alpha"))
         XCTAssertEqual(alpha.context.socketPath, try server.socketPath(for: "alpha"))
         XCTAssertEqual(alpha.context.helpersDirectory, helpers)
-        // alpha's own instructions.md is used as it is; beta had none, so
+        // alpha's own instructions.md is kept, with the manual's section
+        // added to it once since it predates the manual; beta had none, so
         // it was seeded from the template with Codex's way to reply.
-        XCTAssertEqual(alpha.context.instructions, "Be brief.")
+        let own = try XCTUnwrap(alpha.context.instructions)
+        XCTAssertTrue(own.hasPrefix("Be brief.\n\n## The manual\n"))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: storageDirectory.appendingPathComponent("alpha/manual-offered").path))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: storageDirectory.appendingPathComponent("manual/index.md").path))
         let beta = try XCTUnwrap(adapters.adapter("beta")?.context.instructions)
         XCTAssertTrue(beta.contains("`sirius` MCP server"))
         XCTAssertFalse(beta.contains("{{"))

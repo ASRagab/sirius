@@ -41,6 +41,8 @@ Both shortcuts can be changed in **Settings…** from the menu-bar icon. The com
 
 The first time an agent sends a notification, macOS asks whether Sirius may show them.
 
+The full manual is [packaging/agent/manual/index.md](packaging/agent/manual/index.md). It ships inside the app: **Sirius Manual** in the menu opens it, and your agent can answer questions from it.
+
 ## 4. Updates
 
 Sirius updates itself. It checks once a day, tells you when a new version is ready, and installs it when you click. **Check for Updates…** in the menu checks now.
@@ -52,7 +54,7 @@ swift build && swift test
 scripts/dev-install.sh      # build, sign, and install Sirius.app
 ```
 
-`scripts/build-app.sh` builds `build/Sirius.app` on its own. Both sign with the Developer ID in your keychain if there is one; without one the app is ad-hoc signed, and macOS forgets its permissions on every rebuild. The design is in [docs/architecture.md](docs/architecture.md).
+`scripts/build-app.sh` builds `build/Sirius.app` on its own. It needs `pandoc` (`brew install pandoc`) to make the manual's PDF. Both sign with the Developer ID in your keychain if there is one; without one the app is ad-hoc signed, and macOS forgets its permissions on every rebuild. The design is in [docs/architecture.md](docs/architecture.md).
 
 ## 6. Bring your own harness (BYOH)
 
