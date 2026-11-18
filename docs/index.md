@@ -6,7 +6,6 @@ Last updated: `2026.11.09`
 
 | Document | Contents |
 |---|---|
-| [intent.md](intent.md) | What Sirius is for: your daimon, the main thread that represents your active attention, and the objectives that follow |
 | [architecture.md](architecture.md) | The app, the helpers and the adapters, and how a message and a reply flow through them |
 | [protocol/proto.ts](protocol/proto.ts) | The wire contract: commands, content, errors, the registration and the Message. Draft 1 |
 | [dictation.md](dictation.md) | Dictation as built: fn to an agent, ⌃fn to paste, the ParrotCore engine and permissions |
