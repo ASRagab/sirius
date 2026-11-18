@@ -75,7 +75,7 @@ extension SettingsModel {
     static func preview() -> SettingsModel {
         let registrations = [
             AgentRegistration(agent: "claude", name: "Claude", harness: .claudeCode,
-                              executable: "/Users/you/.local/bin/claude", root: "/Users/you/Projects/humanitas",
+                              executable: "/Users/you/.local/bin/claude", root: "/Users/you/Projects/notes",
                               effort: "low"),
             AgentRegistration(agent: "codex", name: "Codex", harness: .codex,
                               executable: "/opt/homebrew/bin/codex", root: "/Users/you/Projects/sirius",

@@ -61,7 +61,7 @@ final class AgentChoiceTests: XCTestCase {
 @MainActor
 final class AgentChoiceSettingsTests: XCTestCase {
     private func registered(_ harness: AgentRegistration.Harness, model: String? = nil, effort: String? = "low",
-                            root: String = "/Users/u/humanitas") -> AgentChoice {
+                            root: String = "/Users/u/notes") -> AgentChoice {
         let current = AgentRegistration(agent: AgentChoice.id(harness), name: AgentChoice.name(harness),
                                         harness: harness, executable: "/bin/sh", root: root,
                                         model: model, effort: effort)
@@ -71,10 +71,10 @@ final class AgentChoiceSettingsTests: XCTestCase {
     }
 
     func testSummaryNamesWorkspaceModelAndEffort() {
-        XCTAssertEqual(registered(.claudeCode).settingsSummary, "humanitas · Default model · Low effort")
+        XCTAssertEqual(registered(.claudeCode).settingsSummary, "notes · Default model · Low effort")
         XCTAssertEqual(registered(.claudeCode, model: "claude-opus-5-5", effort: "xhigh").settingsSummary,
-                       "humanitas · claude-opus-5-5 · Extra high effort")
-        XCTAssertEqual(registered(.codex, effort: nil).settingsSummary, "humanitas · Default model · Default effort")
+                       "notes · claude-opus-5-5 · Extra high effort")
+        XCTAssertEqual(registered(.codex, effort: nil).settingsSummary, "notes · Default model · Default effort")
     }
 
     func testSummaryWithoutWorkspaceOrCLI() {
