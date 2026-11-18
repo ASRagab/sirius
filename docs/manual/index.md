@@ -30,7 +30,7 @@ Sirius lives in the menu bar, under the sparkle icon. It has no Dock icon and no
     | Permission | Why |
     |---|---|
     | Microphone | So Sirius can hear you while you hold the key |
-    | Accessibility | So it can see the key you hold, and paste dictated text into other apps |
+    | Accessibility | So it can see the key you hold, paste dictated text into other apps, and read what you have selected in a few apps (§5) |
 
 * **Workspaces.** Sirius finds the agents you have installed. Each agent works in one folder, its workspace. Sirius picks the folder that agent's own program used most recently among the folders you already trust there. Click Change to pick another.
 
@@ -73,27 +73,36 @@ If the agent is busy, your message waits and is delivered when its current turn 
 
 ## 5. What your agent sees
 
-Your agent gets your words and any files you attach. If the app behind the composer supports it, the agent also gets context from that app: what you have open there and what you have selected.
+Your agent gets your words and any files you attach. It also gets context from the app behind the composer, when that app is one Sirius can get it from (see "Which apps" below): what you have open there and what you have selected.
 
 **The context line.** When there is context, one quiet line at the bottom left of the composer says what will be sent, for example:
 
 ```
-release-runbook.md  ·  lines 12–18
+release-runbook.md  ·  “Before the release, check…”
 ```
 
-* The picture is the app's own small icon, and the words are the app's own when it supplies them.
-* The line follows you. Select something else in the app and the line changes, in apps that support live updates; in the others it catches up when you click back into the composer.
+* The picture is the app's own small icon, and the words are the app's own when it supplies them. Otherwise the line names what is open and quotes how your selection begins.
+* The line follows you. Select something else in the app and the line changes.
 * Hold the pointer over the line to see the start of the selected text.
 
 **To send a message without the context,** click the × that appears on the line when you point at it, or press ⌘⌫ with the cursor at the start of the text. That removes it for this message only.
 
-**To turn context off altogether,** run this in Terminal and reopen the composer. There is no switch for it in Settings yet.
+**To turn context off,** open Settings… → Context. "Send ambient context" turns all of it off; below it, every app has a switch of its own.
 
-```sh
-defaults write com.humanitas.sirius composer.ambient_context -bool false
-```
+**Which apps.** Context comes in two ways.
 
-**Which apps provide context.** Only apps built to. An app has to speak the Ambient Context Protocol, and it decides what it shares. Sirius does not read your screen, and an app that provides nothing shows no line.
+* **Apps that provide it themselves.** An app built for it tells Sirius what you have open, and decides what it shares. Each one appears in Settings… → Context the first time it gives Sirius context.
+* **Apps Sirius reads.** For a short fixed list of Apple's apps, Sirius reads what is open and selected itself, through the Accessibility permission you gave it at setup.
+
+    | App | What is sent | At first |
+    |---|---|---|
+    | Preview | The file's name and location, and the text you selected | On |
+    | Safari | The page's title and address, and the text you selected | On |
+    | Notes | The note's title, its folder and when it was changed, and the text you selected | On |
+    | Finder | The folder's location, and the names and locations of the files you selected | On |
+    | Mail | The window's title and the text you selected | Off; turn it on in Settings |
+
+Sirius takes only that: the thing that is open and what you selected in it, never the rest of the window, and never a password field. It reads when you open the composer or speak a message, and while the composer is open. No other app is read, and Messages is not on the list. Your agent is told when context was read by Sirius and not given by the app.
 
 ## 6. What comes back
 
@@ -152,6 +161,8 @@ Open **Settings…** from the menu-bar menu, or press ⌘, while the menu is ope
 | Permissions | Microphone, Accessibility | Shows Allowed, or an Allow button |
 | Agents | One row per agent | See §7 |
 | Toasts | Stay for | How long a toast stays before it leaves by itself: 3, 5, 8 or 12 seconds (3 by default), up to twice that for a long one. Alerts stay until you dismiss them. |
+| Context | Send ambient context | Off: no message carries context from any app |
+| Context | One switch per app | The apps that provide context, and the apps Sirius reads (§5) |
 | Dictation | Model | Shows the speech model in use and its size. It cannot be changed here. |
 
 The window also shows the version of Sirius you are running.
@@ -160,7 +171,7 @@ The window also shows the version of Sirius you are running.
 
 * **Speech is recognized on your Mac.** Audio is not sent anywhere.
 * **Your messages go to your agent and nowhere else.** Sirius hands them to the agent program on your Mac. What that program sends to its maker is governed by your account with them, as when you use it in a terminal.
-* **Context comes only from apps that offer it,** is shown to you in the context line before you send, and can be removed or turned off (§5).
+* **Context comes only from apps that offer it and from the few apps listed in §5,** is shown to you in the context line before you send, and can be removed for one message or turned off for any app (§5).
 * **Sirius has no account and no server of its own.** It goes online only to download the speech model once and to check for updates.
 
 Where Sirius keeps things:
@@ -203,7 +214,7 @@ Sirius is signed and notarized, so the permissions you allowed stay allowed afte
 
 **No notifications.** Open System Settings → Notifications → Sirius and allow them. Toasts do not depend on this.
 
-**No context line.** The app behind the composer does not provide context, or context is turned off (§5).
+**No context line.** The app behind the composer does not provide context and is not one Sirius reads, or it is switched off in Settings… → Context (§5).
 
 **Still stuck.** Quit Sirius from its menu and open it again; that restarts the agents. If the problem stays, open an issue at [github.com/humanitas-labs/sirius/issues](https://github.com/humanitas-labs/sirius/issues) and attach `~/Library/Logs/Sirius/sirius.log`.
 
