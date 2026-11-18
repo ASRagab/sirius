@@ -6,7 +6,7 @@
 
 Talk to your agents from anywhere on your Mac. Hold `fn` and say what you want, or press ⌘⇧J to type it, and your agent gets to work in its own folder. When it has something to tell you, the reply comes back as a small toast, a notification or a spoken line, so you can keep doing what you were doing.
 
-Sirius is bring your own harness (BYOH). It has no model of its own: it drives the agent CLI you already have installed and signed in, with your account, your settings and your folders. Claude Code, ChatGPT / Codex and Muse Code work out of the box, and any other harness is one adapter away ([§6](#6-bring-your-own-harness)).
+Sirius is bring your own harness (BYOH). It has no model of its own: it drives the agent CLI you already have installed and signed in, with your account, your settings and your folders. Claude Code, ChatGPT / Codex and Muse Code work out of the box, and any other harness is one adapter away ([§6](#6-bring-your-own-harness-byoh)).
 
 ## 1. Install
 
@@ -51,7 +51,7 @@ scripts/dev-install.sh      # build, sign, and install Sirius.app
 
 `scripts/build-app.sh` builds `build/Sirius.app` on its own. Both sign with the Developer ID in your keychain if there is one; without one the app is ad-hoc signed, and macOS forgets its permissions on every rebuild. The design is in [docs/architecture.md](docs/architecture.md).
 
-## 6. Bring your own harness
+## 6. Bring your own harness (BYOH)
 
 A harness is an agent CLI that can hold a session without its terminal UI: Claude Code, Codex and Muse Code today. Each one is an agent in Sirius, described by `~/.agents/registry/<agent>/agent.json`, whose `harness` field picks the adapter that runs it. The adapter is the only code written per harness. The composer, dictation, toasts, asides and the log are the same for all of them.
 
