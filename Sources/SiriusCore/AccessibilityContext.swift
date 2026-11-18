@@ -94,7 +94,7 @@ public enum AccessibilityContext {
     public static let scheme = "accessibility"
     // On the root, so an agent can tell a tree Sirius read from an app's
     // own answer.
-    public static let sourceAttribute = "source"
+    public static let sourceAttribute = "via"
     // The most characters of selected text kept, as for a provider.
     public static let maxTextChars = 20_000
     // The most selected files kept.
@@ -153,7 +153,10 @@ public enum AccessibilityContext {
             inner = AmbientElement(id: "folder", role: "List", subrole: "folder", title: clean(reading.documentTitle) ?? title,
                                    url: url, focused: true, children: rows)
         }
-        return AmbientElement(id: "window", role: "Window", title: title, focused: true, children: [inner])
+        // The mark again on the window: the message lists what is inside
+        // the root, so this is the one an agent sees.
+        return AmbientElement(id: "window", role: "Window", title: title, focused: true, children: [inner],
+                              attributes: [sourceAttribute: .string(scheme)])
     }
 
     // Apple's role names onto the protocol's thirteen. Anything else is a

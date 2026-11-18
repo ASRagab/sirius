@@ -16,7 +16,7 @@ final class AccessibilityContextTests: XCTestCase {
         let answer = try XCTUnwrap(try snapshot(reading, "com.apple.Preview"))
         let root = answer.tree.root
         XCTAssertEqual(root.role, "Application")
-        XCTAssertEqual(root.attributes?["source"], .string("accessibility"))
+        XCTAssertEqual(root.attributes?["via"], .string("accessibility"))
         XCTAssertEqual(answer.tree.focusPath.map(\.role), ["Window", "Document", "Text"])
         let document = answer.tree.focusPath[1]
         XCTAssertEqual(document.subrole, "pdf")
@@ -109,6 +109,9 @@ final class AccessibilityContextTests: XCTestCase {
         XCTAssertEqual(answer.summary, AmbientSummary(subject: "Trip to Lisbon"))
         XCTAssertTrue(MessageRenderer.render(Message(id: "m_1", agent: "claude", text: "x", context: answer.messageContext))
             .contains("folder=\"Travel\""))
+        // An agent can tell Sirius read this itself.
+        XCTAssertTrue(MessageRenderer.render(Message(id: "m_1", agent: "claude", text: "x", context: answer.messageContext))
+            .contains("via=\"accessibility\""))
     }
 
     // The line quotes how the selection begins, cut at a word.
