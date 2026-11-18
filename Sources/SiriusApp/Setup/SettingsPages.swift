@@ -428,7 +428,7 @@ private struct ContextPane: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                SettingsGroup("Context") { // TODO(copy): copy
+                SettingsGroup("Ambient Context") { // TODO(copy): copy
                     PillRow("Send ambient context") { // TODO(copy): copy
                         PillSwitch(label: "Send ambient context", isOn: Binding(
                             get: { context.enabled }, set: { context.enabled = $0 }))
@@ -440,7 +440,7 @@ private struct ContextPane: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    heading("Apps that provide context", // TODO(copy): copy
+                    heading("Providers", // TODO(copy): copy
                             note: "These apps tell Sirius what you have open themselves.") // TODO(copy): copy
                     if context.providers.isEmpty {
                         Text("None yet. An app appears here the first time it gives Sirius context.") // TODO(copy): copy
@@ -461,7 +461,7 @@ private struct ContextPane: View {
                 }
                 .disabled(!context.enabled)
                 VStack(alignment: .leading, spacing: 10) {
-                    heading("Apps Sirius reads", // TODO(copy): copy
+                    heading("Native apps", // TODO(copy): copy
                             // TODO(copy): copy
                             note: "Sirius reads what is selected in these apps itself, through Accessibility.")
                     ForEach(NativeApps.all, id: \.id) { app in
