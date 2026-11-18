@@ -82,7 +82,7 @@ final class ComposerController {
     // listed agent in place of a choice the list lacked, and store it, so
     // Codex's sends went to Claude (2026.10.11).
     private static let lastAgentKey = SettingsKeys.lastAgent
-    private var selection = AgentSelection(chosen: UserDefaults.standard.string(forKey: lastAgentKey))
+    private var selection: AgentSelection
     private var current: String? { selection.current }
 
     // The agents as each open read them, for dictation's addresses
@@ -109,6 +109,7 @@ final class ComposerController {
     init(target: ComposerTarget, defaults: UserDefaults = .standard) {
         self.target = target
         self.defaults = defaults
+        selection = AgentSelection(chosen: defaults.string(forKey: Self.lastAgentKey))
         shortcut = Shortcuts.compose(in: defaults)
         panel.onSend = { [weak self] in self?.send() }
         panel.onSendAside = { [weak self] in self?.sendAside() }
@@ -335,13 +336,6 @@ final class ComposerController {
         ))
     }
 
-    // Selects `agent`, as the user's own switch would, and keeps it.
-    func select(agent: String) {
-        guard selection.choose(agent) else { return }
-        UserDefaults.standard.set(agent, forKey: Self.lastAgentKey)
-        refreshAgent()
-    }
-
     // The registered agents, from the host; the composer's own copy is what
     // the next open shows at once.
     private func loadAgents() async {
@@ -413,7 +407,7 @@ final class ComposerController {
     // place. No list or popover: people have two to four agents.
     private func nextAgent() {
         guard let chosen = selection.next() else { return NSSound.beep() }
-        UserDefaults.standard.set(chosen, forKey: Self.lastAgentKey)
+        defaults.set(chosen, forKey: Self.lastAgentKey)
         refreshAgent()
     }
 
