@@ -185,7 +185,7 @@ public struct AmbientTree: Decodable, Equatable, Sendable {
     // wrong kind is dropped, not refused.
     public var display: AmbientDisplay?
     // The app says what this answer holds is likely private (0.2.4,
-    // operations 4.4, RFC-0007), so the user is asked before it is sent.
+    // operations 4.5, RFC-0007), so the user is asked before it is sent.
     // Only the JSON value true counts: false, a missing field and a value
     // of another kind are all "not said", and never refuse the answer.
     // Not being said never lowers Sirius's own caution (ContextWarnings).
