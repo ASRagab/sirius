@@ -442,6 +442,7 @@ private struct ContextPane: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                separator
                 VStack(alignment: .leading, spacing: 10) {
                     heading("Apps that share natively", // TODO(copy): copy
                             note: "These apps tell Sirius what you have open themselves.") // TODO(copy): copy
@@ -457,12 +458,14 @@ private struct ContextPane: View {
                     }
                 }
                 .disabled(!context.enabled)
+                separator
                 PillRow("Warn before sending from sensitive apps", // TODO(copy): copy
-                        note: "Mail, Chrome and apps that say so. Asks once more before the message goes.") { // TODO(copy): copy
+                        note: "Mail, Chrome and apps that say so. Asks again before sending.") { // TODO(copy): copy
                     PillSwitch(label: "Warn before sending from sensitive apps", isOn: Binding(
                         get: { context.warns }, set: { context.warns = $0 }))
                 }
                 .disabled(!context.enabled)
+                separator
                 VStack(alignment: .leading, spacing: 10) {
                     heading("Onscreen", // TODO(copy): copy
                             // TODO(copy): copy
@@ -487,6 +490,11 @@ private struct ContextPane: View {
     }
 
     static let sensitiveNote = "Sensitive: Sirius warns before sending." // TODO(copy): copy
+
+    // A thin line between the page's sections.
+    private var separator: some View {
+        Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
+    }
 
     private func heading(_ title: String, note: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
