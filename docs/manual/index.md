@@ -6,15 +6,17 @@ This manual is inside the app. Your agent can read it too: ask "how do I change 
 
 ## 1. What Sirius is
 
-Sirius has no model of its own. It drives an agent program that is already installed and signed in on your Mac, with your account, your settings and your folders. Three work today:
+Sirius has no model of its own. It drives an agent program that is already installed and signed in on your Mac, with your account, your settings and your folders. Five work today:
 
 | Agent | Program | Needs |
 |---|---|---|
 | Claude | Claude Code | 2.1.71 or later |
 | Codex | Codex, or the copy inside ChatGPT.app | 0.132.0 or later |
 | Muse | Muse Code | 1.4.14 or later |
+| Cursor | Cursor's CLI, `agent` | checked with 2026.08.11 |
+| Gemini | Google's Antigravity CLI, `agy` | checked with 1.5.11 |
 
-If yours is older, a toast tells you to update it.
+If yours is older, a toast tells you to update it. Cursor and Gemini take one message at a time: a message sent while they work waits for the next turn instead of joining the one running.
 
 Sirius lives in the menu bar, under the sparkle icon. It has no Dock icon and no main window.
 
@@ -44,7 +46,7 @@ If you use Parrot with `fn` as its key, quit Parrot, or the key is handled twice
 
 **Hold `fn` and speak.** Let go when you are done. What you said goes to an agent as a message. A small pill near the bottom of the screen shows that Sirius is listening.
 
-* **To pick an agent, say its name first:** "Claude, …", "Codex, …" or "Muse, …". Without a name, the message goes to the agent you last chose in the composer.
+* **To pick an agent, say its name first:** "Claude, …", "Codex, …", "Muse, …", "Cursor, …" or "Gemini, …". Without a name, the message goes to the agent you last chose in the composer.
 * **To dictate into any app, hold ⌃ and `fn`.** What you said is pasted where your cursor is, and no agent is involved.
 
 Speech is turned into text on your Mac. The first time, Sirius downloads the speech model (about 145 MB), and the pill shows the progress. If you already use Parrot, Sirius uses Parrot's model and your dictionary at `~/.config/parrot/dictionary`.
@@ -143,7 +145,7 @@ An agent you have installed but never used in Sirius appears in the list too. Ch
 ~/.agents/registry/<agent>/instructions.md
 ```
 
-`<agent>` is `claude`, `codex` or `muse`. Sirius writes the file once, when the agent is set up, and never overwrites it. Edit it to change how the agent behaves in Sirius: add rules of your own at the bottom, or include another file by naming it with `@`, like `@~/notes/agent.md`. Changes take effect the next time the agent starts.
+`<agent>` is `claude`, `codex`, `muse`, `cursor` or `gemini`. Sirius writes the file once, when the agent is set up, and never overwrites it. Edit it to change how the agent behaves in Sirius: add rules of your own at the bottom, or include another file by naming it with `@`, like `@~/notes/agent.md`. Changes take effect the next time the agent starts.
 
 Beside it, `consts.md` holds the numbers the instructions use, and `agent.json` holds the settings above.
 
@@ -207,7 +209,7 @@ Sirius is signed and notarized, so the permissions you allowed stay allowed afte
 
 * Check that it is Enabled and has a Workspace in Settings… → Agents.
 * It may be busy with an earlier message; yours is waiting behind it.
-* Open a terminal and run the agent's own program (`claude`, `codex` or `muse`). If it asks you to sign in or update, do that, then quit and reopen Sirius.
+* Open a terminal and run the agent's own program (`claude`, `codex`, `muse`, `agent` for Cursor or `agy` for Gemini). If it asks you to sign in or update, do that, then quit and reopen Sirius.
 
 **Dictation hears nothing, or the wrong words.**
 
