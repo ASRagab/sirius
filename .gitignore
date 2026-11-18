@@ -16,3 +16,4 @@ dist/
 docs/.internal/
 
 .marina/
+default.profraw
