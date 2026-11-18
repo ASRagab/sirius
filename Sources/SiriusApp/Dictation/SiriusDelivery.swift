@@ -93,7 +93,7 @@ final class SiriusDelivery: TranscriptDelivery {
         case .agent(let agent, let body):
             SiriusLog.dictation.info("dictation: \(body.count) chars to \(agent)")
             do {
-                let context = await frontContext()
+                let context = await frontContext(for: agent)
                 try await target.send(text: body, attachments: [], context: context, to: agent)
             } catch {
                 SiriusLog.dictation.error("dictation: send to \(agent) failed: \(error)")
@@ -110,12 +110,26 @@ final class SiriusDelivery: TranscriptDelivery {
     // Read after the transcription, not at the press: the app in front then
     // is the one asked. Nil when the setting is off, Sirius is in front, or
     // the app does not answer in time.
-    private func frontContext() async -> Message.Context? {
+    // Says something to the user under an agent's mark (a toast). Set by
+    // main; nothing in the tests.
+    var notice: @MainActor (_ agent: String, _ text: String) -> Void = { _, _ in }
+
+    private func frontContext(for agent: String) async -> Message.Context? {
         guard SettingsKeys.ambientContextEnabled(in: .standard),
               let front = NSWorkspace.shared.frontmostApplication, front != .current,
               let bundleID = front.bundleIdentifier
         else { return nil }
         let snapshot = await readContext(front.processIdentifier, bundleID)
+        // A spoken message has no composer to warn in, so context from an
+        // app marked sensitive is left out, and said to be, until the user
+        // stops the warning for that app or in Settings.
+        if snapshot != nil, ContextWarnings.shouldWarn(bundleID, in: .standard) {
+            let app = front.localizedName ?? snapshot?.appName ?? "that app"
+            // TODO(copy): copy
+            notice(agent, "Left out what you had selected in \(app). Send it from the composer, or stop this warning in Settings.")
+            SiriusLog.dictation.info("dictation: context from \(bundleID) left out, sensitive")
+            return nil
+        }
         let context = snapshot?.messageContext
         // Counts only: what was selected is never logged.
         let via = snapshot?.helper.map { " via helper \($0)" } ?? ""

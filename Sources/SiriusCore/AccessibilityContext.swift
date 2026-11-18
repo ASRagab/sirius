@@ -273,3 +273,38 @@ public enum ContextProviders {
         defaults.object(forKey: key(id)) == nil ? true : defaults.bool(forKey: key(id))
     }
 }
+
+// Apps whose context is often someone else's words or private pages. Before
+// a message carries context from one, Sirius warns, every time, until the
+// user ticks "Don't warn again" for that app or turns the warning off in
+// Settings. The mark is on the app, however its context is read: Mail is
+// read by Sirius, Chrome answers through its helper.
+public enum ContextWarnings {
+    public static let sensitive: Set<String> = ["com.apple.mail", "com.google.Chrome"]
+    // The warning's switch in Settings. Unset is on.
+    public static let enabledKey = "context.warn_sensitive"
+    static let dismissedPrefix = "context.no_warning."
+
+    public static func isSensitive(_ bundleID: String) -> Bool { sensitive.contains(bundleID) }
+
+    public static func isEnabled(in defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: enabledKey) == nil ? true : defaults.bool(forKey: enabledKey)
+    }
+
+    // Whether a message with context from this app is warned about first.
+    public static func shouldWarn(_ bundleID: String, in defaults: UserDefaults) -> Bool {
+        isSensitive(bundleID) && isEnabled(in: defaults) && !defaults.bool(forKey: dismissedPrefix + bundleID)
+    }
+
+    // "Don't warn again", for one app.
+    public static func dismiss(_ bundleID: String, in defaults: UserDefaults) {
+        defaults.set(true, forKey: dismissedPrefix + bundleID)
+    }
+
+    // The switch in Settings. Turning it on warns for every app again.
+    public static func setEnabled(_ on: Bool, in defaults: UserDefaults) {
+        defaults.set(on, forKey: enabledKey)
+        guard on else { return }
+        for id in sensitive { defaults.removeObject(forKey: dismissedPrefix + id) }
+    }
+}

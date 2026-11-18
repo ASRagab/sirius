@@ -30,6 +30,24 @@ final class AccessibilityContextTests: XCTestCase {
         XCTAssertNil(answer.helper)
     }
 
+    func testSensitiveAppsAreWarnedAboutUntilDismissedOrSwitchedOff() throws {
+        let suite = "sirius-warn-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(ContextWarnings.shouldWarn("com.apple.mail", in: defaults))
+        XCTAssertTrue(ContextWarnings.shouldWarn("com.google.Chrome", in: defaults))
+        XCTAssertFalse(ContextWarnings.shouldWarn("com.apple.Preview", in: defaults))
+        ContextWarnings.dismiss("com.apple.mail", in: defaults)
+        XCTAssertFalse(ContextWarnings.shouldWarn("com.apple.mail", in: defaults))
+        XCTAssertTrue(ContextWarnings.shouldWarn("com.google.Chrome", in: defaults))
+        ContextWarnings.setEnabled(false, in: defaults)
+        XCTAssertFalse(ContextWarnings.shouldWarn("com.google.Chrome", in: defaults))
+        // On again: every app is warned about again.
+        ContextWarnings.setEnabled(true, in: defaults)
+        XCTAssertTrue(ContextWarnings.shouldWarn("com.apple.mail", in: defaults))
+        XCTAssertEqual(Set(NativeApps.all.filter(\.sensitive).map(\.id)).subtracting(ContextWarnings.sensitive), [])
+    }
+
     func testPreviewSaysWhatKindOfFileIsOpen() throws {
         func kind(_ url: String?) throws -> String? {
             try XCTUnwrap(try snapshot(AccessibilityReading(windowTitle: "w", documentURL: url), "com.apple.Preview"))

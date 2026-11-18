@@ -104,6 +104,8 @@ release-runbook.md  ·  “Before the release, check…”
 
 Sirius takes only that: the thing that is open and what you selected in it, never the rest of the window, and never a password field. It reads when you open the composer or speak a message, and while the composer is open. No other app is read, and Messages is not on the list. Your agent is told when context was read by Sirius and not given by the app.
 
+**Sensitive apps.** Mail and Chrome often show someone else's words or a private page. The first time you press Return with context from one of them, the message is not sent: the line says what would go, and Return again sends it. Cancel goes back; tick "Don't warn again" to stop the warning for that app. A spoken message leaves that context out and tells you so. The switch for the warning is in Settings… → Context.
+
 ## 6. What comes back
 
 You never read the agent's raw output. The agent chooses one of these for each thing it has to tell you:
@@ -162,6 +164,7 @@ Open **Settings…** from the menu-bar menu, or press ⌘, while the menu is ope
 | Agents | One row per agent | See §7 |
 | Toasts | Stay for | How long a toast stays before it leaves by itself: 3, 5, 8 or 12 seconds (3 by default), up to twice that for a long one. Alerts stay until you dismiss them. |
 | Context | Send ambient context | Off: no message carries context from any app |
+| Context | Warn before sending from sensitive apps | On: Sirius asks once more before a message carries context from Mail or Chrome |
 | Context | One switch per app | The apps that provide context, and the apps Sirius reads (§5) |
 | Dictation | Model | Shows the speech model in use and its size. It cannot be changed here. |
 

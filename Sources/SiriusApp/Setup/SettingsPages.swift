@@ -391,6 +391,17 @@ final class ContextSettings: ObservableObject {
         set { set(newValue, SettingsKeys.ambientContext) }
     }
 
+    // The warning before context from a sensitive app is sent
+    // (ContextWarnings). Turning it on warns for every app again.
+    var warns: Bool {
+        get { ContextWarnings.isEnabled(in: defaults) }
+        set {
+            objectWillChange.send()
+            ContextWarnings.setEnabled(newValue, in: defaults)
+            SiriusLog.onboarding.info("settings: \(ContextWarnings.enabledKey) \(newValue ? "on" : "off")")
+        }
+    }
+
     func isOn(_ app: NativeApp) -> Bool { NativeApps.isOn(app, in: defaults) }
     func set(_ app: NativeApp, on: Bool) { set(on, NativeApps.key(app)) }
     func isOn(_ provider: ContextProviders.Seen) -> Bool { ContextProviders.isOn(provider.id, in: defaults) }
@@ -431,9 +442,16 @@ private struct ContextPane: View {
                             .foregroundStyle(.tertiary)
                     }
                     ForEach(context.providers) { provider in
-                        ContextAppRow(bundleID: provider.id, name: provider.name, note: nil, isOn: Binding(
+                        ContextAppRow(bundleID: provider.id, name: provider.name,
+                                      note: ContextWarnings.isSensitive(provider.id) ? Self.sensitiveNote : nil, isOn: Binding(
                             get: { context.isOn(provider) }, set: { context.set(provider, on: $0) }))
                     }
+                }
+                .disabled(!context.enabled)
+                PillRow("Warn before sending from sensitive apps", // TODO(copy): copy
+                        note: "Mail and Chrome. Asks once more before the message goes.") { // TODO(copy): copy
+                    PillSwitch(label: "Warn before sending from sensitive apps", isOn: Binding(
+                        get: { context.warns }, set: { context.warns = $0 }))
                 }
                 .disabled(!context.enabled)
                 VStack(alignment: .leading, spacing: 10) {
@@ -442,7 +460,7 @@ private struct ContextPane: View {
                             note: "Sirius reads what is selected in these apps itself, through Accessibility.")
                     ForEach(NativeApps.all, id: \.id) { app in
                         ContextAppRow(bundleID: app.id, name: app.name,
-                                      note: app.sensitive ? "Often someone else's words. Off unless you turn it on." : nil, // TODO(copy): copy
+                                      note: app.sensitive ? Self.sensitiveNote + " Off unless you turn it on." : nil, // TODO(copy): copy
                                       isOn: Binding(get: { context.isOn(app) }, set: { context.set(app, on: $0) }))
                     }
                 }
@@ -452,6 +470,8 @@ private struct ContextPane: View {
         }
         .scrollIndicators(.never)
     }
+
+    static let sensitiveNote = "Sensitive: Sirius warns before sending." // TODO(copy): copy
 
     private func heading(_ title: String, note: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {

@@ -127,3 +127,115 @@ final class ContextLine: NSView {
 
     @objc private func removeClicked() { onRemove?() }
 }
+
+// The warning before the first message that carries context from an app
+// marked sensitive. Pressing Return the first time does not send: the
+// context line gives way to this sentence, and the send button's side
+// gains WarningControls. Return again, or the send button, sends.
+final class ContextWarning: NSView {
+    private let icon = NSImageView()
+    private let label = NSTextField(labelWithString: "")
+
+    init() {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = NSColor(srgbRed: 0xF0 / 255, green: 0xC0 / 255, blue: 0x6A / 255, alpha: 1)
+        label.maximumNumberOfLines = 1
+        label.lineBreakMode = .byTruncatingMiddle
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [icon, label])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 7
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: ContextLine.height),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func show(app: String, agent: String, icon image: NSImage?) {
+        icon.image = image
+        label.stringValue = "Sends your selection in \(app) to \(agent)." // TODO(copy): copy
+    }
+}
+
+// Beside the send button while the warning shows: a small checkbox,
+// "Don't warn again", and an outlined Cancel that goes back to the message
+// unsent.
+final class WarningControls: NSView {
+    var onCancel: (() -> Void)?
+    private let check = NSButton()
+    private let cancel = NSButton()
+
+    // Whether the user ticked "Don't warn again".
+    var dontWarnAgain: Bool { check.state == .on }
+
+    func reset() { check.state = .off }
+
+    init() {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        // Drawn from symbols: the system's checkbox has a dark box that is
+        // lost on the composer's surface.
+        check.setButtonType(.toggle)
+        check.isBordered = false
+        check.imagePosition = .imageLeading
+        check.imageHugsTitle = true
+        let symbols = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+        check.image = NSImage(systemSymbolName: "square", accessibilityDescription: nil)?.withSymbolConfiguration(symbols)
+        check.alternateImage = NSImage(systemSymbolName: "checkmark.square.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(symbols)
+        check.contentTintColor = NSColor(white: 1, alpha: 0.7)
+        check.attributedTitle = NSAttributedString(string: " Don't warn again", attributes: [ // TODO(copy): copy
+            .font: NSFont.systemFont(ofSize: 11.5), .foregroundColor: NSColor(white: 1, alpha: 0.62),
+        ])
+        check.attributedAlternateTitle = check.attributedTitle
+        (check.cell as? NSButtonCell)?.highlightsBy = []
+        (check.cell as? NSButtonCell)?.showsStateBy = .contentsCellMask
+        cancel.isBordered = false
+        cancel.wantsLayer = true
+        cancel.layer?.cornerRadius = 11
+        cancel.layer?.cornerCurve = .continuous
+        cancel.layer?.borderWidth = 1
+        cancel.layer?.borderColor = NSColor(white: 1, alpha: 0.28).cgColor
+        cancel.attributedTitle = NSAttributedString(string: "Cancel", attributes: [ // TODO(copy): copy
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor(white: 1, alpha: 0.85),
+        ])
+        cancel.target = self
+        cancel.action = #selector(cancelClicked)
+        cancel.translatesAutoresizingMaskIntoConstraints = false
+        let row = NSStackView(views: [check, cancel])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 14
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            cancel.widthAnchor.constraint(equalToConstant: 66),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.topAnchor.constraint(equalTo: topAnchor),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        heightOfCancel = cancel.heightAnchor.constraint(equalToConstant: 30.56)
+        heightOfCancel?.isActive = true
+    }
+
+    private var heightOfCancel: NSLayoutConstraint?
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func cancelClicked() { onCancel?() }
+}

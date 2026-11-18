@@ -140,6 +140,7 @@ MainActor.assumeIsolated {
     let dictationAgents = DictationAgents(target: composerTarget)
     composer.onAgents = { dictationAgents.set($0) }
     let delivery = SiriusDelivery(composer: composer, target: composerTarget, agents: { dictationAgents.addresses })
+    delivery.notice = { agent, text in _ = toasts.enqueue(agent: agent, text: text, alert: false) }
     let dictation = DictationService(
         delivery: delivery,
         model: DictationModel(),

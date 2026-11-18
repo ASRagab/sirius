@@ -15,12 +15,19 @@ final class ComposerPanel: NSPanel {
     var onAttach: (([URL]) -> Void)?
     var onRemoveAttachment: ((URL) -> Void)?
     var onRemoveContext: (() -> Void)?
+    // Cancel on the sensitive-app warning.
+    var onCancelWarning: (() -> Void)?
+    // Whether "Don't warn again" is ticked on the warning.
+    var dontWarnAgain: Bool { warningControls.dontWarnAgain }
     // The composer came back to the keys: the user may have been in the
     // app behind it.
     var onReturn: (() -> Void)?
     // The context line, at the bottom left when there is context.
     private var context: ContextLine.Model?
     private let contextLine = ContextLine()
+    private let contextWarning = ContextWarning()
+    private let warningControls = WarningControls()
+    private var sendGlyph: NSImageView?
     private var attached: [URL] = []
     // The vertical padding scales with the text, 16/18 since it went to 16,
     // as the old padding was a bit much at the new size: text top 31 → 28,
@@ -184,6 +191,11 @@ final class ComposerPanel: NSPanel {
         contextLine.isHidden = true
         contextLine.onRemove = { [weak self] in self?.onRemoveContext?() }
         background.addSubview(contextLine)
+        contextWarning.isHidden = true
+        background.addSubview(contextWarning)
+        warningControls.isHidden = true
+        warningControls.onCancel = { [weak self] in self?.onCancelWarning?() }
+        background.addSubview(warningControls)
 
         // The agent's icon: 16 × 16, 21.5pt left of the pill.
         agentButton.isBordered = false
@@ -216,6 +228,7 @@ final class ComposerPanel: NSPanel {
         glyph.contentTintColor = Palette.glyph
         glyph.translatesAutoresizingMaskIntoConstraints = false
         sendButton.addSubview(glyph)
+        sendGlyph = glyph
         sendButton.setAccessibilityLabel("Send")
         background.addSubview(sendButton)
 
@@ -254,6 +267,11 @@ final class ComposerPanel: NSPanel {
 
             contextLine.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: Self.sideInset),
             contextLine.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
+            contextWarning.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: Self.sideInset),
+            contextWarning.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
+            contextWarning.trailingAnchor.constraint(lessThanOrEqualTo: warningControls.leadingAnchor, constant: -16),
+            warningControls.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -10),
+            warningControls.centerYAnchor.constraint(equalTo: sendButton.centerYAnchor),
 
             wavesView.widthAnchor.constraint(equalToConstant: DictationWaves.size.width),
             wavesView.heightAnchor.constraint(equalToConstant: DictationWaves.size.height),
@@ -315,6 +333,23 @@ final class ComposerPanel: NSPanel {
             group.duration = 0.18
             contextLine.animator().alphaValue = 1
         }
+    }
+
+    // The sensitive-app warning, or back. While it shows, the sentence has
+    // the context line's place, the agent's mark gives way to the checkbox
+    // and Cancel, and the send button turns white: the one thing to press.
+    func setWarning(app: String?, agent: String = "", icon: NSImage? = nil) {
+        let warning = app != nil
+        if let app {
+            contextWarning.show(app: app, agent: agent, icon: icon)
+            if warningControls.isHidden { warningControls.reset() }
+        }
+        contextWarning.isHidden = !warning
+        warningControls.isHidden = !warning
+        contextLine.isHidden = warning || context == nil
+        agentButton.isHidden = warning
+        sendButton.layer?.backgroundColor = (warning ? NSColor.white : Palette.pill).cgColor
+        sendGlyph?.contentTintColor = warning ? NSColor(white: 0.08, alpha: 1) : Palette.glyph
     }
 
     private func rebuildTiles() {

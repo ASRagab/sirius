@@ -47,6 +47,9 @@ final class ComposerController {
     // The icon of the app the opening read, and its favicon when its
     // bundle has one, for that line.
     private var contextIcon: NSImage?
+    private var contextAppName: String?
+    // The sensitive-app warning is showing: the next send goes.
+    private var confirming = false
     private var contextFavicon: Data?
     // The watch on the app the opening read, and the one-read-at-a-time
     // rule for the reads its notices cause (startWatch).
@@ -111,11 +114,17 @@ final class ComposerController {
         shortcut = Shortcuts.compose(in: defaults)
         panel.onSend = { [weak self] in self?.send() }
         panel.onNextAgent = { [weak self] in self?.nextAgent() }
-        panel.onCancel = { [weak self] in self?.close() }
+        // Esc backs out of the warning first, then closes.
+        panel.onCancel = { [weak self] in
+            guard let self else { return }
+            if self.confirming { self.endWarning() } else { self.close() }
+        }
+        panel.onCancelWarning = { [weak self] in self?.endWarning() }
         panel.onAttach = { [weak self] urls in self?.attach(urls) }
         panel.onReturn = { [weak self] in self?.contextChanged() }
         panel.onRemoveContext = { [weak self] in
             guard let self else { return }
+            self.endWarning()
             self.ambient.clear()
             self.contextSource = nil
             self.stopWatch()
@@ -234,6 +243,7 @@ final class ComposerController {
     // is dropped if the composer has closed, sent or been reopened since.
     private func loadContext(from front: NSRunningApplication?) {
         let ticket = ambient.begin()
+        endWarning()
         contextSource = nil
         stopWatch()
         panel.setContext(nil)
@@ -243,6 +253,7 @@ final class ComposerController {
         let pid = front.processIdentifier
         contextSource = (pid, bundleID)
         contextIcon = front.icon
+        contextAppName = front.localizedName
         contextFavicon = front.bundleURL.flatMap { AmbientFavicon.data(inBundle: $0, bundleID: bundleID) }
         // An app Sirius reads itself is known before it is read, so the
         // line names it at once and the read fills in the rest.
@@ -405,6 +416,7 @@ final class ComposerController {
     }
 
     func close(then gone: @escaping () -> Void = {}) {
+        endWarning()
         let previous = previous
         self.previous = nil
         stopWatch()
@@ -428,6 +440,12 @@ final class ComposerController {
     func insertDictation(_ text: String) {
         clearSent()
         panel.insert(text)
+    }
+
+    private func endWarning() {
+        guard confirming else { return }
+        confirming = false
+        panel.setWarning(app: nil)
     }
 
     private func clearSent() {
@@ -468,6 +486,22 @@ final class ComposerController {
         // The selected agent or none: never another. A host without it
         // throws, which beeps below and keeps the text.
         guard let agent = current else { return NSSound.beep() }
+        // Context from an app marked sensitive is warned about first: this
+        // send only shows the warning, and the next one goes (D8).
+        if let source = contextSource, ambient.snapshot != nil {
+            if !confirming, ContextWarnings.shouldWarn(source.bundleID, in: defaults) {
+                confirming = true
+                let name = agents.first { $0.id == agent }?.name ?? agent
+                panel.setWarning(app: contextAppName ?? ambient.snapshot?.appName, agent: name, icon: contextIcon)
+                SiriusLog.composer.info("warned before sending context from \(source.bundleID)")
+                return
+            }
+            if confirming, panel.dontWarnAgain {
+                ContextWarnings.dismiss(source.bundleID, in: defaults)
+                SiriusLog.composer.info("warnings off for \(source.bundleID)")
+            }
+        }
+        endWarning()
         sending = true
         stopWatch()
         let files = attachments

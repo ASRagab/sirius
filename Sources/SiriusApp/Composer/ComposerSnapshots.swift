@@ -55,6 +55,11 @@ enum ComposerSnapshots {
                 subject: "338", selection: "Marina", app: "Threads", icon: nil, favicon: data
             )))
         }
+        let mailIcon = NSWorkspace.shared.icon(forFile: "/System/Applications/Mail.app")
+        let mail = ContextLine.Model(subject: "Re: Lease renewal terms", selection: "“We can offer twelve…”", app: "Mail",
+                                     icon: mailIcon, favicon: nil)
+        all.append(("W1-mail-before-send", "Draft a polite reply declining this.", nil, mail))
+        all.append(("W2-mail-warning", "Draft a polite reply declining this.", nil, mail))
         for shot in all {
             let panel = ComposerPanel()
             panel.setAgent(name: "Claude", mark: AgentMarks.mark(agent: "claude"))
@@ -63,6 +68,9 @@ enum ComposerSnapshots {
             panel.orderFrontRegardless()
             panel.textView.string = shot.text
             panel.setContext(shot.context)
+            if shot.name.hasPrefix("W2") {
+                panel.setWarning(app: shot.context?.app, agent: "Claude", icon: shot.context?.icon)
+            }
             panel.fitHeight()
             let clip = panel.textView.enclosingScrollView?.contentView
             if let fraction = shot.scroll, let clip {
