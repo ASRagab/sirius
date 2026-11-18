@@ -136,7 +136,7 @@ Plan §7 ships it at launch; the schema's `harness` field has no value for it ye
 
 ### 5.4 — ACP agents: Cursor and Antigravity
 
-Built against the protocol's documentation and a fake agent; not yet run against a signed-in CLI of either. Any agent with an Agent Client Protocol server (version 1, JSON-RPC over stdio) runs through one adapter, `ACPAdapter`, and what is the CLI's own is a profile: Cursor's `agent acp` and Antigravity's `agy acp`.
+Run live against Cursor's CLI `2026.08.11` and Antigravity's `1.5.11` on 2026.11.18: a toast and a reopened session on each. Any agent with an Agent Client Protocol server (version 1, JSON-RPC over stdio) runs through one adapter, `ACPAdapter`, and what is the CLI's own is a profile: Cursor's `agent acp` and Antigravity's `agy acp`.
 
 | Job | ACP |
 |---|---|

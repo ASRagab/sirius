@@ -102,16 +102,18 @@ extension ACPProfile {
     static let unattended = "Sirius agents run with nobody at the terminal. Ask the user with a toast through the sirius tools and end the turn."
 
     // Antigravity CLI: `agy acp` (antigravity.google/docs/cli/acp), run
-    // signed out against 1.5.11 on 2026.11.18; no turn has run yet.
-    // initialize reports protocol 1, session/resume and session/load, image
-    // prompts, and four auth methods, of which "oauth-personal" opens a
-    // browser: none is called. The server reuses the sign-in an interactive
-    // `agy` cached, and without one answers session/new "Authentication
-    // required", which the adapter reports with the command to run. It
-    // exits when its stdin closes. The model and thinking level are session
-    // config options (docs; not yet seen). It advertises a system prompt
-    // only under its own _meta key, whose request shape is not documented,
-    // so instructions go in front of the first prompt. The child does not
+    // against 1.5.11 on 2026.11.18: two turns with a toast and a resumed
+    // session. initialize reports protocol 1, session/resume and
+    // session/load, image prompts, and four auth methods, of which
+    // "oauth-personal" opens a browser: none is called. The server reuses
+    // the sign-in an interactive `agy` cached, and without one answers
+    // session/new "Authentication required", which the adapter reports with
+    // the command to run. A session takes the MCP servers session/new
+    // names and asks permission for each call of their tools; it reports
+    // usage_update. It exits when its stdin closes. The model and thinking
+    // level are session config options. It advertises a system prompt only
+    // under its own _meta key, whose request shape is not documented, so
+    // instructions go in front of the first prompt. The child does not
     // update itself mid-session; the user's own agy keeps updating.
     static let antigravity = ACPProfile(
         product: "Antigravity", command: "agy", signIn: "agy",
