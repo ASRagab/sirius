@@ -89,7 +89,7 @@ release-runbook.md  ·  “Before the release, check…”
 
 **To send a message without the context,** click the × that appears on the line when you point at it, or press ⌘⌫ with the cursor at the start of the text. That removes it for this message only.
 
-**To turn context off,** open Settings… → Context. "Send ambient context" turns all of it off; below it, every app has a switch of its own.
+**To turn context off,** open Settings… → Context. "Use ambient context" turns all of it off; below it, every app has a switch of its own.
 
 **Which apps.** Context comes in two ways.
 
@@ -165,7 +165,7 @@ Open **Settings…** from the menu-bar menu, or press ⌘, while the menu is ope
 | Permissions | Microphone, Accessibility | Shows Allowed, or an Allow button |
 | Agents | One row per agent | See §7 |
 | General | Toasts stay for | How long a toast stays before it leaves by itself: 3, 5, 8 or 12 seconds (3 by default), up to twice that for a long one. Alerts stay until you dismiss them. |
-| Context | Send ambient context | Off: no message carries context from any app |
+| Context | Use ambient context | Off: no message carries context from any app |
 | Context | Warn before sending from sensitive apps | On: Sirius asks once more before a message carries context from Mail or Chrome |
 | Context | One switch per app | The apps that provide context, and the apps Sirius reads (§5) |
 | Dictation | Model | Shows the speech model in use and its size. It cannot be changed here. |

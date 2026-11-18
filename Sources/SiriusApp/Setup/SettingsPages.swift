@@ -432,8 +432,8 @@ private struct ContextPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 SettingsGroup("Ambient Context") { // TODO(copy): copy
-                    PillRow("Send ambient context") { // TODO(copy): copy
-                        PillSwitch(label: "Send ambient context", isOn: Binding(
+                    PillRow("Use ambient context") { // TODO(copy): copy
+                        PillSwitch(label: "Use ambient context", isOn: Binding(
                             get: { context.enabled }, set: { context.enabled = $0 }))
                     }
                     // TODO(copy): copy
@@ -526,7 +526,7 @@ private struct ContextAppRow: View {
             if sensitive {
                 Text("Sensitive") // TODO(copy): copy
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.secondary)
                     .help("Sirius asks before sending context from this app.") // TODO(copy): copy
             }
             PillSwitch(label: name, isOn: $isOn)
