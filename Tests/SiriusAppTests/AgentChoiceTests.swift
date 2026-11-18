@@ -160,6 +160,19 @@ final class AgentChoiceSettingsTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testAnUntouchedSeededIconGivesWayAndAPersonsOwnIsKept() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let seeded = folder.appendingPathComponent("seeded.svg")
+        try Data("<svg>\n  <!-- simple-icons 15.16.0 (CC0), icons/meta.svg -->\n</svg>".utf8).write(to: seeded)
+        let own = folder.appendingPathComponent("own.svg")
+        try Data("<svg><path d=\"M0 0h24v24H0z\"/></svg>".utf8).write(to: own)
+        XCTAssertTrue(AgentMarks.isSeededCopy(seeded))
+        XCTAssertFalse(AgentMarks.isSeededCopy(own))
+    }
+
     func testCursorTakesNoEffortAndTheOthersDo() {
         XCTAssertFalse(registered(.cursor).takesEffort)
         XCTAssertEqual(registered(.cursor, effort: nil).effortOptions, [nil])

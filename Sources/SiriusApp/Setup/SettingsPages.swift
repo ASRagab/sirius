@@ -247,7 +247,6 @@ private struct SettingsAgentRow: View {
         Button(action: open) {
             HStack(spacing: 12) {
                 AgentMark(harness: agent.harness, size: 22, ink: .primary)
-                    .opacity(agent.isRegistered && !agent.isRunning ? 0.4 : 1)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.name)
                     Text(agent.settingsSummary)

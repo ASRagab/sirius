@@ -45,7 +45,7 @@ enum AgentMarks {
         if let entry = cache[agent], entry.url == url, entry.modified == modified {
             return entry.image
         }
-        guard let image = NSImage(contentsOf: url), image.isValid else {
+        guard let source = NSImage(contentsOf: url), source.isValid, let image = rasterized(source) else {
             cache[agent] = nil
             return sparkle(agent)
         }
@@ -55,12 +55,49 @@ enum AgentMarks {
 
     private static func file(agent: String, harness: AgentRegistration.Harness?) -> URL? {
         let registry = AgentRegistry(directory: AgentHost.registryDirectory())
-        if let own = registry.icon(agent: agent) { return own }
+        let own = registry.icon(agent: agent)
+        if let own, !isSeededCopy(own) { return own }
         guard let harness = harness ?? (try? registry.load(agent: agent).get())?.registration.harness else {
-            return nil
+            return own
         }
         let url = AgentRegistry.defaultIcon(harness: harness, marks: directory)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        return FileManager.default.fileExists(atPath: url.path) ? url : own
+    }
+
+    // Whether an agent's icon.svg is a copy onboarding seeded from an
+    // earlier default mark, untouched since: those carry the comment naming
+    // their simple-icons source. Such a copy gives way to the current
+    // default, so a mark fixed in the app (Gemini's gradient, Meta's for
+    // Muse) reaches agents set up before the fix. A logo the person put
+    // there has no such comment and is kept.
+    static func isSeededCopy(_ url: URL) -> Bool {
+        guard url.pathExtension == "svg", let data = try? Data(contentsOf: url), data.count < 64_000,
+              let text = String(data: data, encoding: .utf8) else { return false }
+        return text.contains("<!-- simple-icons ")
+    }
+
+    // The mark drawn once by AppKit into a bitmap at 128 pixels a side.
+    // SwiftUI draws an SVG's gradients in their first color only, so
+    // Gemini's sparkle came out lavender and Meta's mark flat blue; AppKit's
+    // own drawing keeps them. Vector-only files (PDF) are drawn the same way.
+    static func rasterized(_ source: NSImage) -> NSImage? {
+        guard source.size.width > 0, source.size.height > 0 else { return nil }
+        let side = 128
+        let scale = CGFloat(side) / max(source.size.width, source.size.height)
+        let pixels = NSSize(width: (source.size.width * scale).rounded(), height: (source.size.height * scale).rounded())
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(pixels.width),
+                                         pixelsHigh: Int(pixels.height), bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        source.draw(in: NSRect(origin: .zero, size: pixels))
+        NSGraphicsContext.restoreGraphicsState()
+        rep.size = source.size
+        let image = NSImage(size: source.size)
+        image.addRepresentation(rep)
+        image.accessibilityDescription = source.accessibilityDescription
+        return image
     }
 
     private static var makers: [AgentChoice.Maker: NSImage] = [:]

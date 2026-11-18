@@ -359,21 +359,27 @@ private struct AgentFocus: View {
     }
 }
 
-// An agent's mark (AgentMarks) in one colour: the Claude mark in its own
-// orange (#D97757), any other in `ink`, white on the onboarding's sky.
-// The Settings window draws it too, in its text color.
+// An agent's mark (AgentMarks) in its maker's colors, as the composer and
+// the toast draw it: Claude's orange, Gemini's gradient sparkle, Meta's
+// blue for Muse. The two one-color marks, Codex's and Cursor's, take
+// `ink` instead: white on the onboarding's sky, the text color in Settings.
+// A disabled row does not gray it out.
 struct AgentMark: View {
     let harness: AgentRegistration.Harness
     let size: CGFloat
     var ink: Color = .white
 
+    static func inked(_ harness: AgentRegistration.Harness) -> Bool {
+        harness == .codex || harness == .cursor
+    }
+
     var body: some View {
         if let mark = AgentMarks.mark(agent: AgentChoice.id(harness), harness: harness) {
             Image(nsImage: mark)
-                .renderingMode(.template)
+                .renderingMode(Self.inked(harness) ? .template : .original)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .foregroundStyle(harness == .claudeCode ? NightSkyPalette.claude : ink)
+                .foregroundStyle(ink)
                 .frame(width: size, height: size)
         }
     }
