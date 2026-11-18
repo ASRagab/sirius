@@ -56,7 +56,7 @@ final class SiriusDelivery: TranscriptDelivery {
     // Reads the app in front, as the composer does at each open. Replaced
     // in tests.
     var readContext: (_ pid: Int32, _ bundleID: String) async -> AmbientSnapshot? = { pid, bundleID in
-        await AmbientContextSource().context(frontPID: pid, bundleID: bundleID)
+        await FrontAppContext.read(pid: pid, bundleID: bundleID)
     }
 
     init(composer: ComposerController, target: ComposerTarget,

@@ -13,6 +13,8 @@ let devAgent = "dev"
 // the app.
 // Prints the agent argv for scripts/compat-test.sh and exits.
 AgentArgsPreview.runIfRequested()
+// Reads one app's context through Accessibility, prints its shape and exits.
+AccessibilityProbe.runIfRequested()
 // Settings saved under their old camelCase keys move to snake_case before
 // anything reads them.
 SettingsKeys.migrate(.standard)

@@ -63,7 +63,7 @@ final class ComposerController {
     // Reads the app in front: its process and bundle id in, its context or
     // nil out. Replaced in tests.
     var readContext: (_ pid: Int32, _ bundleID: String) async -> AmbientSnapshot? = { pid, bundleID in
-        await AmbientContextSource().context(frontPID: pid, bundleID: bundleID)
+        await FrontAppContext.read(pid: pid, bundleID: bundleID)
     }
     // Sent text still showing as the panel closes; cleared once it has gone,
     // or at once if the composer reopens first.
@@ -247,7 +247,7 @@ final class ComposerController {
             self.showContext(answer)
             self.startWatch(on: answer.provider)
             // Ids and counts only: what was selected is never logged.
-            let via = answer.helper.map { " via helper \($0)" } ?? ""
+            let via = answer.provider.isNative ? " via accessibility" : answer.helper.map { " via helper \($0)" } ?? ""
             SiriusLog.composer.info("context from \(bundleID)\(via): \(answer.count) items")
         }
     }
@@ -268,7 +268,8 @@ final class ComposerController {
     // keeps what it last read and nothing is shown to the user.
     private func startWatch(on provider: AmbientProvider) {
         stopWatch()
-        guard AmbientClient.offersWatch(provider.descriptor.protocol) else { return }
+        // A tree Sirius read itself has no endpoint to watch.
+        guard !provider.isNative, AmbientClient.offersWatch(provider.descriptor.protocol) else { return }
         let open = watchContext
         let app = provider.descriptor.app.id
         watch = Task { [weak self] in
