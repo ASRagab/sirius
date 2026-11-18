@@ -216,6 +216,8 @@ final class InstructionsTests: XCTestCase {
         XCTAssertFalse(try read("agent/workers.md").contains(path))
         XCTAssertFalse(try Instructions.offerManual(folder: folder, templates: agent,
                                                     marker: base.appendingPathComponent("support/agent/manual-offered")))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: agent.appendingPathComponent("manual/index.md").path))
+        // The manual's source is docs/manual; build-app.sh copies it into the bundle's agent folder.
+        let docs = agent.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("docs/manual/index.md")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: docs.path))
     }
 }

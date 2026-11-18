@@ -86,8 +86,6 @@ final class AgentHostTests: XCTestCase {
         XCTAssertTrue(own.hasPrefix("Be brief.\n\n## The manual\n"))
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: storageDirectory.appendingPathComponent("alpha/manual-offered").path))
-        XCTAssertTrue(FileManager.default.fileExists(
-            atPath: storageDirectory.appendingPathComponent("manual/index.md").path))
         let beta = try XCTUnwrap(adapters.adapter("beta")?.context.instructions)
         XCTAssertTrue(beta.contains("`sirius` MCP server"))
         XCTAssertFalse(beta.contains("{{"))
