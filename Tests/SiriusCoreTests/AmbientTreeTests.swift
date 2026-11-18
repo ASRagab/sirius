@@ -319,7 +319,7 @@ final class AmbientTreeTests: XCTestCase {
 
     // The composer's line: what is open, then what is selected in it.
     func testTheSummaryNamesWhatIsOpenAndWhatIsSelected() throws {
-        XCTAssertEqual(try snapshot().summary, AmbientSummary(subject: "Comment by Ada", selection: "3 words"))
+        XCTAssertEqual(try snapshot().summary, AmbientSummary(subject: "Comment by Ada", selection: "“what it shows”"))
         XCTAssertEqual(try snapshot(["id": "app", "role": "Application", "title": "Example"]).summary,
                        AmbientSummary(subject: "Example"))
         XCTAssertEqual(try snapshot(["id": "app", "role": "Application"]).summary, AmbientSummary(subject: "Threads"))
@@ -361,7 +361,7 @@ final class AmbientTreeTests: XCTestCase {
                        AmbientSummary(subject: "Budget.numbers", selection: "cells B2:D9"))
         XCTAssertEqual(AmbientSummary(try tree(["title": "Budget.numbers"]), app: "Example"),
                        AmbientSummary(subject: "Budget.numbers"))
-        let own = AmbientSummary(subject: "Comment by Ada", selection: "3 words")
+        let own = AmbientSummary(subject: "Comment by Ada", selection: "“what it shows”")
         XCTAssertEqual(AmbientSummary(try tree(["title": 4]), app: "Example"), own)
         XCTAssertEqual(AmbientSummary(try tree("no"), app: "Example"), own)
         XCTAssertEqual(AmbientSummary(try tree(["detail": "only a detail"]), app: "Example"), own)

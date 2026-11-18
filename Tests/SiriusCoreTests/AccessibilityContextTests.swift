@@ -22,7 +22,7 @@ final class AccessibilityContextTests: XCTestCase {
         XCTAssertEqual(document.title, "report.pdf")
         XCTAssertEqual(document.url, "file:///tmp/report.pdf")
         XCTAssertEqual(answer.tree.selected.map(\.text), ["two words"])
-        XCTAssertEqual(answer.summary, AmbientSummary(subject: "report.pdf", selection: "2 words"))
+        XCTAssertEqual(answer.summary, AmbientSummary(subject: "report.pdf", selection: "“two words”"))
         XCTAssertEqual(answer.appName, "Preview")
         XCTAssertEqual(answer.source, "com.apple.Preview")
         XCTAssertTrue(answer.provider.isNative)
@@ -35,7 +35,7 @@ final class AccessibilityContextTests: XCTestCase {
         let answer = try XCTUnwrap(try snapshot(reading, "com.apple.Safari"))
         XCTAssertEqual(answer.tree.focusPath[1].title, "A page")
         XCTAssertEqual(answer.tree.focusPath[1].url, "https://example.com/a")
-        XCTAssertEqual(answer.summary, AmbientSummary(subject: "A page", selection: "1 word"))
+        XCTAssertEqual(answer.summary, AmbientSummary(subject: "A page", selection: "“x”"))
     }
 
     func testAnOpenDocumentWithNothingSelectedIsStillSent() throws {
@@ -72,7 +72,19 @@ final class AccessibilityContextTests: XCTestCase {
         let answer = try XCTUnwrap(try snapshot(reading, "com.apple.MobileSMS"))
         XCTAssertEqual(answer.tree.focusPath.map(\.role), ["Window", "List", "Row", "Text"])
         XCTAssertEqual(answer.tree.focusPath[1].subrole, "conversation")
-        XCTAssertEqual(answer.summary, AmbientSummary(subject: "Ada", selection: "4 words"))
+        XCTAssertEqual(answer.summary, AmbientSummary(subject: "Ada", selection: "“see you at six”"))
+    }
+
+    // The line quotes how the selection begins, cut at a word.
+    func testTheLineQuotesTheStartOfTheSelection() throws {
+        let text = "The Tenant shall give no less than sixty (60) days' written notice.\nSecond line."
+        let answer = try XCTUnwrap(try snapshot(AccessibilityReading(windowTitle: "n", selectedText: text), "com.apple.Notes"))
+        XCTAssertEqual(answer.summary.selection, "“The Tenant shall give no…”")
+        XCTAssertEqual(AmbientSummary.excerpt("  one\n\ttwo  "), "“one two”")
+        XCTAssertEqual(AmbientSummary.excerpt(String(repeating: "a", count: 40)),
+                       "“" + String(repeating: "a", count: AmbientSummary.excerptChars) + "…”")
+        XCTAssertNil(AmbientSummary.excerpt(" \n "))
+        XCTAssertNil(AmbientSummary.excerpt(nil))
     }
 
     func testSelectedTextIsCapped() throws {

@@ -44,7 +44,7 @@ enum ComposerSnapshots {
         var all = shots
         if FileManager.default.fileExists(atPath: chrome.path) {
             all.append(("8-context-chrome", "Summarize this page.", nil, ContextLine.Model(
-                subject: "Ambient Context Protocol", selection: "42 words", app: "Google Chrome",
+                subject: "Ambient Context Protocol", selection: "“A provider does not push…”", app: "Google Chrome",
                 icon: NSWorkspace.shared.icon(forFile: chrome.path),
                 favicon: AmbientFavicon.data(inBundle: chrome, bundleID: "com.google.Chrome")
             )))

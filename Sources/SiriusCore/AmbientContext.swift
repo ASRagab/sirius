@@ -563,12 +563,31 @@ public struct AmbientSummary: Equatable, Sendable {
             selection = range.count == 1 ? "line \(range.lowerBound)" : "lines \(range.lowerBound)–\(range.upperBound)"
         } else if let own, own != subject {
             selection = own
-        } else if first.role == "Text" || own == nil,
-                  let words = first.text?.split(whereSeparator: \.isWhitespace).count, words > 0 {
-            selection = words == 1 ? "1 word" : "\(words) words"
+        } else if first.role == "Text" || own == nil, let start = Self.excerpt(first.text) {
+            selection = start
         } else if own == nil {
             selection = "1 selected"
         }
+    }
+
+    // The most characters of selected text the line quotes.
+    public static let excerptChars = 24
+
+    // How the selected text begins, in quotation marks: its first words on
+    // one line, cut at a word where it can be. Nil when it is blank.
+    static func excerpt(_ text: String?) -> String? {
+        let words = (text ?? "").unicodeScalars.split { CharacterSet.whitespacesAndNewlines.contains($0)
+            || CharacterSet.controlCharacters.contains($0) }.map { String(String.UnicodeScalarView($0)) }
+        guard !words.isEmpty else { return nil }
+        let whole = words.joined(separator: " ")
+        guard whole.count > excerptChars else { return "“\(whole)”" }
+        var kept = ""
+        for word in words {
+            guard kept.count + word.count + (kept.isEmpty ? 0 : 1) <= excerptChars else { break }
+            kept += (kept.isEmpty ? "" : " ") + word
+        }
+        if kept.isEmpty { kept = String(whole.prefix(excerptChars)) }
+        return "“\(kept)…”"
     }
 
     // A title worth showing: one line, without control characters, not
