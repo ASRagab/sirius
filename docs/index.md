@@ -1,4 +1,4 @@
-# Sirius docs :: Index
+# Sirius — Index
 
 Last updated: `2026.11.09`
 

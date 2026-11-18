@@ -1,4 +1,4 @@
-# Sirius docs :: Bring your own harness (BYOH)
+# Sirius — Bring your own harness (BYOH)
 
 > How to add a harness (agent CLI) to Sirius.
 
