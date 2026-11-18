@@ -58,7 +58,7 @@ Dictation can mishear a word. Agents are told to read past that and to say how t
 | To | Do |
 |---|---|
 | Send | Return |
-| Send and open an aside (§6) | ⌘Return |
+| Start a new line | ⇧Return |
 | Switch to the next agent | ⌘/ or ⇧Tab, or click the agent beside the send button |
 | Attach files | Drag them onto the composer, or paste them |
 | Remove the last attachment | ⌘⌫ with the cursor at the start of the text |
@@ -105,17 +105,12 @@ You never read the agent's raw output. The agent chooses one of these for each t
 | Alert | A toast that stays, used when the agent cannot go on without you | Only the ×, or a swipe up |
 | Notification | A normal macOS notification, for results you may come back to later | Notification Center |
 | Speech | The agent reads a line aloud. It does this only when you ask to hear something. | Click the speech capsule to stop the line being spoken |
-| Aside | A window for a longer answer or a discussion | Esc or ⌘W |
 
 Clicking a toast does nothing, so a stray click never loses it. Toasts are shown one at a time, in order.
 
 **To answer a toast or an alert,** send the agent another message, spoken or typed. It remembers the conversation.
 
-**Asides.** An aside is a side conversation in its own window, for an answer too long for a toast or one you want to discuss. It opens two ways: you send from the composer with ⌘Return, or the agent opens one itself.
-
-* The aside starts knowing everything the agent knew, and from there it is separate: what is said in it does not reach the main conversation, and it does not wait for the agent's other work.
-* Type follow-ups in the window. You can attach files with the + button or by dragging them in. ⌘M minimizes the window.
-* Closing the window ends the aside. What was said is saved as a Markdown file, and the agent is told where, so you can refer to it later.
+Anything longer than a toast holds, the agent puts in a file and tells you where it is.
 
 ## 7. Your agents
 
@@ -173,7 +168,7 @@ Where Sirius keeps things:
 |---|---|
 | `~/.agents/registry/<agent>/` | Each agent's settings and instructions |
 | `~/.agents/WMEM.md` | Working memory |
-| `~/Library/Application Support/Sirius/agents/<agent>/` | Each agent's message log, attachments and saved asides |
+| `~/Library/Application Support/Sirius/agents/<agent>/` | Each agent's message log and attachments |
 | `~/Library/Application Support/Sirius/agents/manual/` | This manual |
 | `~/Library/Logs/Sirius/sirius.log` | What Sirius did, for troubleshooting. It does not record what you said. At most 5 MB, with one older copy. |
 
@@ -221,13 +216,10 @@ The first three are the defaults and can be changed in Settings.
 | Hold ⌃ and `fn` | Anywhere | Dictate at the cursor |
 | ⌘⇧J | Anywhere | Open the composer |
 | Return | Composer | Send |
-| ⌘Return | Composer | Send and open an aside |
+| ⇧Return | Composer | New line |
 | ⌘/ or ⇧Tab | Composer | Next agent |
 | ⌘⌫ at the start of the text | Composer | Remove the context, then the last attachment |
 | Hold `fn` | Composer | Dictate into the text |
 | Esc | Composer | Close |
-| Return | Aside | Send a follow-up |
-| ⌘M | Aside | Minimize |
-| Esc or ⌘W | Aside | Close and save the aside |
 | ⌘, | Sirius menu | Settings… |
 | ⌘Q | Sirius menu | Quit Sirius |
