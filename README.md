@@ -54,7 +54,7 @@ swift build && swift test
 scripts/dev-install.sh      # build, sign, and install Sirius.app
 ```
 
-`scripts/build-app.sh` builds `build/Sirius.app` on its own. It needs `pandoc` (`brew install pandoc`) to make the manual's PDF. Both sign with the Developer ID in your keychain if there is one; without one the app is ad-hoc signed, and macOS forgets its permissions on every rebuild. The design is in [docs/architecture.md](docs/architecture.md).
+`scripts/build-app.sh` builds `build/Sirius.app` on its own. It makes the manual's PDF with Paper's `paper export`. Both sign with the Developer ID in your keychain if there is one; without one the app is ad-hoc signed, and macOS forgets its permissions on every rebuild. The design is in [docs/architecture.md](docs/architecture.md).
 
 ## 6. Bring your own harness (BYOH)
 

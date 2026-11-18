@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Makes the PDF of the user manual from its Markdown.
+# Makes the PDF of the user manual from its Markdown, with Paper.
 #   scripts/make-manual.sh [out.pdf]     → build/Sirius Manual.pdf
 #
 # The manual is packaging/agent/manual/: index.md first, then any other .md
-# beside it in name order. pandoc turns it into one HTML page with the style
-# in scripts/manual/manual.css, and scripts/manual/print-pdf.swift prints
-# that page to US Letter with the system's WebKit, so the only tool the
-# build needs beyond Xcode's is pandoc (brew install pandoc).
+# beside it in name order, exported as one document by `paper export`
+# (Paper's command-line tool; no window opens).
+#
+#   SIRIUS_MANUAL_STYLE   Paper's page style (default: Paper's own default)
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -14,25 +14,25 @@ cd "$(dirname "$0")/.."
 SOURCE=packaging/agent/manual
 OUT="${1:-build/Sirius Manual.pdf}"
 
-if ! command -v pandoc >/dev/null; then
-    echo "make-manual: pandoc is not installed; the manual's PDF needs it (brew install pandoc)" >&2
+if ! command -v paper >/dev/null; then
+    echo "make-manual: the paper command is not installed; the manual's PDF is made with Paper" >&2
     exit 1
 fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-FILES=("$SOURCE/index.md")
+# One file for Paper: index.md, then the other sections.
+cat "$SOURCE/index.md" > "$WORK/Sirius Manual.md"
 while IFS= read -r file; do
-    [ "$file" = "$SOURCE/index.md" ] || FILES+=("$file")
+    [ "$file" = "$SOURCE/index.md" ] && continue
+    printf '\n' >> "$WORK/Sirius Manual.md"
+    cat "$file" >> "$WORK/Sirius Manual.md"
 done < <(find "$SOURCE" -maxdepth 1 -name '*.md' | sort)
 
-pandoc "${FILES[@]}" \
-    --from gfm --to html5 --standalone --embed-resources \
-    --metadata pagetitle="Sirius Manual" --metadata lang=en \
-    --css scripts/manual/manual.css \
-    --output "$WORK/manual.html"
-
 mkdir -p "$(dirname "$OUT")"
-swift scripts/manual/print-pdf.swift "$WORK/manual.html" "$OUT"
+STYLE=()
+[ -n "${SIRIUS_MANUAL_STYLE:-}" ] && STYLE=(--style "$SIRIUS_MANUAL_STYLE")
+paper export "$WORK/Sirius Manual.md" -o "$OUT" --paper letter ${STYLE[@]+"${STYLE[@]}"} >/dev/null
+[ -s "$OUT" ] || { echo "make-manual: paper export wrote nothing to $OUT" >&2; exit 1; }
 echo "$OUT"
