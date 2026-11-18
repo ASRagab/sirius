@@ -26,7 +26,19 @@ final class ContextLine: NSView {
     }
 
     static let height: CGFloat = 20
-    static let maxWidth: CGFloat = 260
+    // Wide enough for a subject and the start of a selection. While the
+    // dictation waves show at the panel's centre the line keeps to the
+    // narrow width, which ends short of them.
+    static let maxWidth: CGFloat = 380
+    static let narrowWidth: CGFloat = 260
+    var narrow = false {
+        didSet {
+            widthCap?.constant = narrow ? Self.narrowWidth : Self.maxWidth
+            detailCap?.constant = (narrow ? Self.narrowWidth : Self.maxWidth) / 2
+        }
+    }
+    private var widthCap: NSLayoutConstraint?
+    private var detailCap: NSLayoutConstraint?
     var onRemove: (() -> Void)?
 
     private let icon = NSImageView()
@@ -69,9 +81,13 @@ final class ContextLine: NSView {
         remove.translatesAutoresizingMaskIntoConstraints = false
         addSubview(remove)
 
+        let widthCap = widthAnchor.constraint(lessThanOrEqualToConstant: Self.maxWidth)
+        let detailCap = detail.widthAnchor.constraint(lessThanOrEqualToConstant: Self.maxWidth / 2)
+        self.widthCap = widthCap
+        self.detailCap = detailCap
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Self.height),
-            widthAnchor.constraint(lessThanOrEqualToConstant: Self.maxWidth),
+            widthCap,
             icon.leadingAnchor.constraint(equalTo: leadingAnchor),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 16),
@@ -82,7 +98,7 @@ final class ContextLine: NSView {
             detail.leadingAnchor.constraint(equalTo: label.trailingAnchor),
             detail.firstBaselineAnchor.constraint(equalTo: label.firstBaselineAnchor),
             // The selection never takes more than half the line.
-            detail.widthAnchor.constraint(lessThanOrEqualToConstant: Self.maxWidth / 2),
+            detailCap,
             remove.leadingAnchor.constraint(equalTo: detail.trailingAnchor, constant: 4),
             remove.trailingAnchor.constraint(equalTo: trailingAnchor),
             remove.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -1),

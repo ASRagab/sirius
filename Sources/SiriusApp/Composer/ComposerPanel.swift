@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SiriusCore
 import SwiftUI
 
@@ -74,6 +75,7 @@ final class ComposerPanel: NSPanel {
     // agent's line, starts about 160 right of the waves, so nothing moves.
     // DictationService drives them.
     let waves = DictationWavesModel()
+    private var wavesPhase: AnyCancellable?
     private static let tilesTop: CGFloat = 18
     private static let tilesGap: CGFloat = 10
     private static var tilesHeight: CGFloat { AttachmentTile.side + tilesGap }
@@ -190,6 +192,10 @@ final class ComposerPanel: NSPanel {
 
         contextLine.isHidden = true
         contextLine.onRemove = { [weak self] in self?.onRemoveContext?() }
+        // The waves show at the centre while fn is held: the line makes room.
+        wavesPhase = waves.$phase.sink { [weak self] phase in
+            self?.contextLine.narrow = phase != .idle
+        }
         background.addSubview(contextLine)
         contextWarning.isHidden = true
         background.addSubview(contextWarning)
