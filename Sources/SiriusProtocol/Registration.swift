@@ -48,6 +48,9 @@ public struct AgentRegistration: Equatable, Sendable, Codable {
         case claudeCode = "claude-code"
         case codex
         case museCode = "muse-code"
+        // Cursor's CLI and Google's Antigravity CLI, both over ACP.
+        case cursor
+        case antigravity
     }
 
     public init(agent: String, name: String, harness: Harness, executable: String, root: String,
@@ -91,7 +94,7 @@ public struct AgentRegistration: Equatable, Sendable, Codable {
 // ~/Library/Application Support/Sirius/agents/<agent>/state.json. Written
 // only by the app.
 public struct AgentState: Equatable, Sendable, Codable {
-    // Resume id: Claude session, Codex thread. Absent until the first turn.
+    // Resume id: Claude session, Codex thread, Muse or ACP session. Absent until the first turn.
     public var session: String?
 
     public init(session: String? = nil) {

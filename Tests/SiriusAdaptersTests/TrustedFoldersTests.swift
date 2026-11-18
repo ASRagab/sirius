@@ -106,6 +106,14 @@ final class TrustedFoldersTests: XCTestCase {
         XCTAssertEqual(TrustedFolders.muse(json: Data("not json".utf8)), [])
     }
 
+    func testAntigravityKeepsItsTrustedWorkspacesInOrderAndCursorHasNone() {
+        let json = Data(#"{"modelProvider": "google", "trustedWorkspaces": ["/b", "/a"]}"#.utf8)
+        XCTAssertEqual(TrustedFolders.antigravity(json: json).map(\.path), ["/b", "/a"])
+        XCTAssertEqual(TrustedFolders.antigravity(json: Data("{}".utf8)), [])
+        XCTAssertEqual(TrustedFolders.antigravity(json: Data("not json".utf8)), [])
+        XCTAssertEqual(TrustedFolders(home: "/nowhere").folders(for: .cursor), [])
+    }
+
     // MARK: Filtering and order
 
     func testTemporaryFoldersAreNeverUsed() throws {

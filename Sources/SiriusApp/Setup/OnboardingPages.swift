@@ -384,6 +384,8 @@ struct AgentMark: View {
         case .claudeCode: "Claude"
         case .codex: "ChatGPT / Codex"
         case .museCode: "Muse"
+        case .cursor: "Cursor"
+        case .antigravity: "Gemini / Antigravity"
         }
     }
 }

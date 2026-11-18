@@ -60,7 +60,7 @@ export interface AgentRegistration {
   /** Shown in the UI, e.g. "Claude". */
   name: string;
   /** The agent program, e.g. "claude-code". Selects the adapter. */
-  harness: "claude-code" | "codex";
+  harness: "claude-code" | "codex" | "muse-code" | "cursor" | "antigravity";
   /** Absolute path, found at setup. */
   executable: string;
   /** Folder the agent works in, picked at setup. Changing it starts a new session. */

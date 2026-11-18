@@ -1,6 +1,6 @@
 # Sirius architecture
 
-Last updated: `2026.11.09`
+Last updated: `2026.11.18`
 
 > Sirius is one Mac app and two small helpers. A message goes from the composer to one agent through an adapter, which is the only per-agent code. Replies come back through one protocol for every agent: the agent calls `display`, `notify` or `speak`, a helper sends that to the app's socket, and the app presents it.
 
@@ -16,6 +16,7 @@ The wire contract is [protocol/proto.ts](protocol/proto.ts). Each part below is 
    - [5.1 — Claude Code, warm headless](#51--claude-code-warm-headless)
    - [5.2 — Codex, app-server](#52--codex-app-server)
    - [5.3 — Claude Code, live session](#53--claude-code-live-session)
+   - [5.4 — ACP agents: Cursor and Antigravity](#54--acp-agents-cursor-and-antigravity)
 6. [Files on disk](#6-files-on-disk)
 7. [Code layout](#7-code-layout)
 8. [Open](#8-open)
@@ -133,6 +134,22 @@ Codex uses `sirius-mcp` rather than `sirius` because its sandbox without network
 
 Plan §7 ships it at launch; the schema's `harness` field has no value for it yet. The user points an agent at a session they already have open, and Sirius writes the Message to that session's socket: 2.0–2.3 s. No reply comes back on the socket, so the turn end is read from the transcript. The session needs `sirius` allowed in its own permissions.
 
+### 5.4 — ACP agents: Cursor and Antigravity
+
+Built against the protocol's documentation and a fake agent; not yet run against a signed-in CLI of either. Any agent with an Agent Client Protocol server (version 1, JSON-RPC over stdio) runs through one adapter, `ACPAdapter`, and what is the CLI's own is a profile: Cursor's `agent acp` and Antigravity's `agy acp`.
+
+| Job | ACP |
+|---|---|
+| Start | spawn the server in the root, `initialize`, `authenticate` with the CLI's cached sign-in where it has a method for that, `session/new {cwd, mcpServers}` |
+| Resume | `session/resume`, or `session/load` where that is all the server has; a session it no longer has is replaced by a new one |
+| Deliver | `session/prompt {sessionId, prompt}`, images as blocks where the server takes them |
+| Turn end | the response to `session/prompt`; only `stopReason: end_turn` is a completed turn |
+| Stop | kill the process (Cursor's stays up after its stdin closes) |
+
+The reply path is `sirius-mcp`, passed as an MCP server of the session, so nothing is written to the user's own MCP configuration. Every `session/request_permission` is answered with the request's allow option, since nobody is at the terminal; Sirius serves no `fs/*` or `terminal/*` methods. The model and effort are set through the session's config options, never a launch flag: Cursor's `--model` also rewrites the user's own default model. Instructions go as the session's `systemPrompt` where the server advertises that, and otherwise in front of the first prompt after each start. ACP version 1 has no steering and no compaction on request, so these agents take a message sent mid-turn as their next turn and are never consolidated.
+
+Cursor adds two requests that wait for an answer: a question to the user is skipped with the reason, a plan is accepted.
+
 ## 6. Files on disk
 
 | Path | Contents | Written by |
@@ -161,7 +178,7 @@ One Swift package.
 | `SiriusClient` | The socket client both helpers share. Connect, write one frame, read one, map to an exit code or tool result. | Protocol |
 | `SiriusMemory` | WMEM.md's format and the `wmem` commands. | nothing |
 | `SiriusCore` | Registry, log, socket server, queue, the working-memory check. | Protocol, Memory |
-| `SiriusAdapters` | One file per adapter, the five jobs. | Core |
+| `SiriusAdapters` | One file or folder per adapter, the five jobs; `ACP/` serves every ACP agent. | Core |
 | `sirius-mcp` | The MCP helper. | Protocol, Client |
 | `sirius` | The CLI helper. | Protocol, Client |
 | `wmem` | The working-memory helper. | Memory |

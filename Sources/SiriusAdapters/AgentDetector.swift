@@ -11,7 +11,15 @@ public struct AgentDetector: Sendable {
         case .claudeCode: "claude"
         case .codex: "codex"
         case .museCode: "muse"
+        case .cursor: "agent"
+        case .antigravity: "agy"
         }
+    }
+
+    // Other names the harness's installer gives the same CLI, looked for
+    // after `command`: Cursor's installs both `agent` and `cursor-agent`.
+    public static func otherCommands(for harness: AgentRegistration.Harness) -> [String] {
+        harness == .cursor ? ["cursor-agent"] : []
     }
 
     // Install locations, relative to the home folder or absolute: Claude's
@@ -39,11 +47,13 @@ public struct AgentDetector: Sendable {
 
     // The absolute path of the harness's CLI, or nil when it is not installed.
     public func find(_ harness: AgentRegistration.Harness) -> String? {
-        let command = Self.command(for: harness)
-        if let shell, let path = lookUp(shell, command), path.hasPrefix("/"), isExecutable(path) {
-            return path
+        let commands = [Self.command(for: harness)] + Self.otherCommands(for: harness)
+        for command in commands {
+            if let shell, let path = lookUp(shell, command), path.hasPrefix("/"), isExecutable(path) {
+                return path
+            }
         }
-        var candidates = Self.searchDirectories.map { $0 + "/" + command }
+        var candidates = commands.flatMap { command in Self.searchDirectories.map { $0 + "/" + command } }
         // The ChatGPT app carries its own codex, which CodexAdapter also falls back to.
         if harness == .codex {
             candidates += ["/Applications/", "~/Applications/"].map { $0 + CodexLaunch.bundledSuffix }

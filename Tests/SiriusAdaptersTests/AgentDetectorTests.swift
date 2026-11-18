@@ -26,6 +26,18 @@ final class AgentDetectorTests: XCTestCase {
         XCTAssertEqual(detector.find(.codex), bundled)
     }
 
+    func testCursorIsFoundUnderEitherNameAndAntigravityAsAgy() {
+        let detector = AgentDetector(home: "/Users/u", shell: "/bin/zsh",
+                                     isExecutable: { ["/custom/cursor-agent", "/Users/u/.local/bin/agy"].contains($0) },
+                                     lookUp: { _, command in command == "cursor-agent" ? "/custom/cursor-agent" : nil })
+        XCTAssertEqual(detector.find(.cursor), "/custom/cursor-agent")
+        XCTAssertEqual(detector.find(.antigravity), "/Users/u/.local/bin/agy")
+        let installed = AgentDetector(home: "/Users/u", shell: nil,
+                                      isExecutable: { ["/Users/u/.local/bin/agent", "/Users/u/.local/bin/cursor-agent"].contains($0) },
+                                      lookUp: { _, _ in nil })
+        XCTAssertEqual(installed.find(.cursor), "/Users/u/.local/bin/agent")
+    }
+
     func testAShellAnswerThatIsNotAnExecutablePathIsIgnored() {
         // An alias or function prints a name, not a path.
         let detector = AgentDetector(home: "/Users/u", shell: "/bin/zsh",

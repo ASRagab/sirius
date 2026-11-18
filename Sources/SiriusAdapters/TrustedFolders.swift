@@ -9,6 +9,10 @@ import SiriusProtocol
 // folders stay its own: Claude's never go to Codex, nor Codex's to Claude.
 // Muse Code keeps them in ~/.config/muse/trust.json (`projects`, an entry
 // per folder with `decision` "trusted"), with no last-use time.
+// Antigravity keeps them in ~/.gemini/antigravity-cli/settings.json
+// (`trustedWorkspaces`, a list of paths), with no last-use time either.
+// Cursor's CLI does not document where it keeps its own, so it has none
+// here and its agent's folder is chosen by hand.
 //
 // Only the keys named here are read. ~/.claude.json holds much else; none of
 // it is decoded, logged or copied.
@@ -71,6 +75,12 @@ public struct TrustedFolders: Sendable {
         case .museCode:
             guard let data = FileManager.default.contents(atPath: home + "/.config/muse/trust.json") else { return [] }
             found = Self.muse(json: data)
+        case .antigravity:
+            guard let data = FileManager.default.contents(atPath: home + "/.gemini/antigravity-cli/settings.json")
+            else { return [] }
+            found = Self.antigravity(json: data)
+        case .cursor:
+            return []
         }
         return rank(found)
     }
@@ -212,5 +222,18 @@ public struct TrustedFolders: Sendable {
         guard let trust = try? JSONDecoder().decode(MuseTrust.self, from: json) else { return [] }
         return (trust.projects ?? [:]).filter { $0.value.decision == "trusted" }.keys.sorted()
             .map { Folder(path: $0) }
+    }
+
+    // MARK: Antigravity
+
+    private struct AntigravitySettings: Decodable {
+        var trustedWorkspaces: [String]?
+    }
+
+    // The folders in `trustedWorkspaces`, in file order: the CLI appends
+    // each as it is trusted.
+    static func antigravity(json: Data) -> [Folder] {
+        guard let settings = try? JSONDecoder().decode(AntigravitySettings.self, from: json) else { return [] }
+        return (settings.trustedWorkspaces ?? []).map { Folder(path: $0) }
     }
 }

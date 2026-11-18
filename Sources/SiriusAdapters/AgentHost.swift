@@ -181,8 +181,8 @@ public actor AgentHost {
     }
 
     // ClaudeAdapter for claude-code, CodexAdapter for codex, MuseAdapter for
-    // muse-code. Muse has no worker instructions: its subagents get the
-    // developer prompt of the host.
+    // muse-code, ACPAdapter for cursor and antigravity. Muse has no worker
+    // instructions: its subagents get the developer prompt of the host.
     public static func makeDefaultAdapter(_ context: AdapterContext) -> any Adapter {
         switch context.registration.harness {
         case .claudeCode:
@@ -195,6 +195,12 @@ public actor AgentHost {
         case .museCode:
             MuseAdapter(registration: context.registration, socketPath: context.socketPath,
                         helpersDirectory: context.helpersDirectory, instructions: context.instructions)
+        case .cursor:
+            ACPAdapter(registration: context.registration, profile: .cursor, socketPath: context.socketPath,
+                       helpersDirectory: context.helpersDirectory, instructions: context.instructions)
+        case .antigravity:
+            ACPAdapter(registration: context.registration, profile: .antigravity, socketPath: context.socketPath,
+                       helpersDirectory: context.helpersDirectory, instructions: context.instructions)
         }
     }
 

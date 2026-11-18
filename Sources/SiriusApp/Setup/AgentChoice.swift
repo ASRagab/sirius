@@ -69,6 +69,8 @@ final class AgentChoice: ObservableObject, Identifiable {
         case .claudeCode: "Claude Code"
         case .codex: "Codex"
         case .museCode: "Muse Code"
+        case .cursor: "Cursor"
+        case .antigravity: "Antigravity"
         }
     }
 
@@ -77,6 +79,8 @@ final class AgentChoice: ObservableObject, Identifiable {
         case .claudeCode: "Claude"
         case .codex: "Codex"
         case .museCode: "Muse"
+        case .cursor: "Cursor"
+        case .antigravity: "Gemini"
         }
     }
 
@@ -86,6 +90,8 @@ final class AgentChoice: ObservableObject, Identifiable {
         case .claudeCode: "claude"
         case .codex: "codex"
         case .museCode: "muse"
+        case .cursor: "cursor"
+        case .antigravity: "gemini"
         }
     }
 
@@ -93,10 +99,12 @@ final class AgentChoice: ObservableObject, Identifiable {
     // 2.9 s at the median against 4.2 s at its default, with no more misreads
     // (front-desk test 2026.10.27). Codex starts at low too;
     // its latency is not measured yet. Muse
-    // follows them; its latency is not measured either.
+    // follows them; its latency is not measured either, nor Antigravity's.
+    // Cursor has no effort of its own: it is part of the model's name.
     static func defaultEffort(_ harness: AgentRegistration.Harness) -> String? {
         switch harness {
-        case .claudeCode, .codex, .museCode: "low"
+        case .claudeCode, .codex, .museCode, .antigravity: "low"
+        case .cursor: nil
         }
     }
 
@@ -244,12 +252,16 @@ extension AgentChoice {
 
     // The efforts each harness's CLI takes: Claude Code's --effort and
     // Codex's model_reasoning_effort, and Muse Code's reasoningEffort
-    // without "none", which Meta's provider refuses.
+    // without "none", which Meta's provider refuses. Antigravity's are
+    // its thinking levels; Cursor's models carry their effort in their
+    // own name ("gemini-4-carbon[reasoning_effort=high]"), so it has none here.
     static func efforts(_ harness: AgentRegistration.Harness) -> [String] {
         switch harness {
         case .claudeCode: ["low", "medium", "high", "xhigh", "max"]
         case .codex: ["minimal", "low", "medium", "high", "xhigh"]
         case .museCode: ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+        case .cursor: []
+        case .antigravity: ["low", "medium", "high", "xhigh", "max"]
         }
     }
 
