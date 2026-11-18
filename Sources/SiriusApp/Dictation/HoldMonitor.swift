@@ -52,14 +52,14 @@ final class HoldMonitor {
 
     var key: HoldKey { gesture.key }
 
-    init(key: HoldKey) {
-        gesture = HoldGesture(key: key)
+    init(key: HoldKey, paste: PasteModifier) {
+        gesture = HoldGesture(key: key, paste: paste.modifiers)
     }
 
-    // Holds `key` from now on, without a new tap. A recording on the old
-    // key is cancelled.
-    func setKey(_ key: HoldKey) {
-        if let action = gesture.setKey(key) { emit(action) }
+    // Holds `key`, with `paste` for the cursor, from now on, without a new
+    // tap. A recording in progress is cancelled.
+    func setKey(_ key: HoldKey, paste: PasteModifier) {
+        if let action = gesture.setKey(key, paste: paste.modifiers) { emit(action) }
     }
 
     func start(onEvent: @escaping (Event) -> Void) throws {

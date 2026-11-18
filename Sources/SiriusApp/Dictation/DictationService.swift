@@ -78,6 +78,8 @@ final class DictationService {
     private let defaults: UserDefaults
     // The key held to dictate.
     private(set) var holdKey: HoldKey
+    // Held with it, pastes at the cursor.
+    private(set) var pasteModifier: PasteModifier
     // Made as the tap first starts: it prepares the input ahead of the first
     // press once the microphone is granted.
     private var capture: AudioCapture?
@@ -117,7 +119,8 @@ final class DictationService {
          composer: ComposerController, defaults: UserDefaults = .standard) {
         self.defaults = defaults
         holdKey = Shortcuts.holdKey(in: defaults)
-        monitor = HoldMonitor(key: holdKey)
+        pasteModifier = Shortcuts.pasteModifier(for: holdKey, in: defaults)
+        monitor = HoldMonitor(key: holdKey, paste: pasteModifier)
         self.delivery = delivery
         self.model = model
         self.agents = agents
@@ -197,7 +200,7 @@ final class DictationService {
         tapFailureLogged = false
         grantTimer?.invalidate()
         grantTimer = nil
-        SiriusLog.dictation.info("dictation: listening on \(holdKey.glyph), \(holdKey.pasteGlyph) to paste")
+        SiriusLog.dictation.info("dictation: listening on \(holdKey.glyph), \(holdKey.pasteGlyph(pasteModifier)) to paste")
         if capture == nil { capture = makeCapture() }
         // Load the model now if it is on disk and the microphone is granted,
         // so the first press is fast. Never a download unasked: that waits
@@ -235,13 +238,23 @@ final class DictationService {
 
     // Holds `key` to dictate from now on, and stores it. The tap follows
     // at once (HoldMonitor.setKey); a hold in progress is cancelled. The
-    // paste chord follows the key (HoldKey.pasteModifier).
+    // paste modifier stays, unless it is the new key's own.
     func setHoldKey(_ key: HoldKey) {
         guard key != holdKey else { return }
         holdKey = key
         Shortcuts.setHoldKey(key, in: defaults)
-        monitor.setKey(key)
-        SiriusLog.dictation.info("dictation: hold \(key.glyph) to talk, \(key.pasteGlyph) to paste")
+        pasteModifier = Shortcuts.pasteModifier(for: key, in: defaults)
+        monitor.setKey(key, paste: pasteModifier)
+        SiriusLog.dictation.info("dictation: hold \(key.glyph) to talk, \(key.pasteGlyph(self.pasteModifier)) to paste")
+    }
+
+    // Holds `paste` with the talk key to paste at the cursor, from now on.
+    func setPasteModifier(_ paste: PasteModifier) {
+        guard paste != pasteModifier, PasteModifier.options(for: holdKey).contains(paste) else { return }
+        pasteModifier = paste
+        Shortcuts.setPasteModifier(paste, in: defaults)
+        monitor.setKey(holdKey, paste: paste)
+        SiriusLog.dictation.info("dictation: \(self.holdKey.pasteGlyph(paste)) to paste")
     }
 
     // MARK: Presses

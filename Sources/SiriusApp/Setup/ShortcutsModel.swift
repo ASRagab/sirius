@@ -22,6 +22,7 @@ final class ShortcutsModel: ObservableObject {
 
     @Published private(set) var compose: KeyCombo
     @Published private(set) var holdKey: HoldKey
+    @Published private(set) var pasteModifier: PasteModifier
     @Published private(set) var state: State = .idle
 
     // How long a refusal shows before the old shortcut comes back.
@@ -31,6 +32,7 @@ final class ShortcutsModel: ObservableObject {
     private let suspend: () -> Void
     private let resume: () -> Void
     private let chooseHoldKey: (HoldKey) -> Void
+    private let choosePaste: (PasteModifier) -> Void
     private var monitor: Any?
     // What ends a recording besides Esc: the window closing or losing the
     // keyboard, or Sirius losing it.
@@ -39,12 +41,15 @@ final class ShortcutsModel: ObservableObject {
     private weak var recordingWindow: NSWindow?
     private var refusalTimer: Timer?
 
-    init(compose: KeyCombo, holdKey: HoldKey,
+    init(compose: KeyCombo, holdKey: HoldKey, pasteModifier: PasteModifier? = nil,
          rebind: @escaping (KeyCombo) -> ComposerController.Rebind = { _ in .bound },
          suspend: @escaping () -> Void = {}, resume: @escaping () -> Void = {},
-         chooseHoldKey: @escaping (HoldKey) -> Void = { _ in }) {
+         chooseHoldKey: @escaping (HoldKey) -> Void = { _ in },
+         choosePaste: @escaping (PasteModifier) -> Void = { _ in }) {
         self.compose = compose
         self.holdKey = holdKey
+        self.pasteModifier = pasteModifier ?? .standard(for: holdKey)
+        self.choosePaste = choosePaste
         self.rebind = rebind
         self.suspend = suspend
         self.resume = resume
@@ -52,11 +57,12 @@ final class ShortcutsModel: ObservableObject {
     }
 
     static func live(composer: ComposerController, dictation: DictationService) -> ShortcutsModel {
-        ShortcutsModel(compose: composer.shortcut, holdKey: dictation.holdKey,
+        ShortcutsModel(compose: composer.shortcut, holdKey: dictation.holdKey, pasteModifier: dictation.pasteModifier,
                        rebind: { [weak composer] in composer?.rebind($0) ?? .takenByApp },
                        suspend: { [weak composer] in composer?.suspendShortcut() },
                        resume: { [weak composer] in composer?.resumeShortcut() },
-                       chooseHoldKey: { [weak dictation] in dictation?.setHoldKey($0) })
+                       chooseHoldKey: { [weak dictation] in dictation?.setHoldKey($0) },
+                       choosePaste: { [weak dictation] in dictation?.setPasteModifier($0) })
     }
 
     // Compose's shortcut as its control shows it: the glyphs, or the
@@ -184,7 +190,17 @@ final class ShortcutsModel: ObservableObject {
     func choose(_ key: HoldKey) {
         guard key != holdKey else { return }
         holdKey = key
+        // The paste modifier stays unless it is the new key's own
+        // (Shortcuts.pasteModifier), as the service decides.
+        if !PasteModifier.options(for: key).contains(pasteModifier) { pasteModifier = .standard(for: key) }
         chooseHoldKey(key)
+    }
+
+    // The modifier held with the talk key to paste at the cursor.
+    func choose(paste: PasteModifier) {
+        guard paste != pasteModifier, PasteModifier.options(for: holdKey).contains(paste) else { return }
+        pasteModifier = paste
+        choosePaste(paste)
     }
 
     // The list, as a menu at the pointer in `view`.

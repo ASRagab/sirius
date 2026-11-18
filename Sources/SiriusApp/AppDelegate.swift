@@ -12,6 +12,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Opens the onboarding; with true, at its agents. The debug menu's
     // Onboarding item.
     private let openOnboarding: (_ agents: Bool) -> Void
+    // "Open manual" with a small raised ↗, as a superscript, in the menu's
+    // own font.
+    static var manualTitle: NSAttributedString {
+        let font = NSFont.menuFont(ofSize: 0)
+        let title = NSMutableAttributedString(string: "Open manual", attributes: [.font: font]) // TODO(copy): copy
+        title.append(NSAttributedString(string: "\u{2009}\u{2197}\u{FE0E}", attributes: [
+            .font: NSFont.menuFont(ofSize: font.pointSize * 0.7),
+            .baselineOffset: font.pointSize * 0.35,
+        ]))
+        return title
+    }
+
     // Opens the Settings window, for Settings….
     private let openSettings: () -> Void
     // Opens the composer, and its shortcut now, for the Compose item: the
@@ -74,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // answers. Absent from a bare `swift build`, which has no bundle to
         // hold it.
         let manual = NSMenuItem(title: "Open manual \u{2197}\u{FE0E}", action: #selector(showManual(_:)), keyEquivalent: "")
+        manual.attributedTitle = Self.manualTitle
         manual.target = self
         manual.isHidden = !FileManager.default.fileExists(atPath: Self.manualURL.path)
         menu.addItem(manual)

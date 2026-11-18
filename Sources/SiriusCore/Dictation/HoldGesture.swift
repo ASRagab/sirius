@@ -106,17 +106,19 @@ public struct HoldGesture {
     static let modifierKeycodes: Set<Int64> = [54, 55, 56, 58, 59, 60, 61, 62, 63]
 
     public private(set) var key: HoldKey
+    // Held with the key, pastes at the cursor (Settings → Keys).
+    public private(set) var paste: HoldModifiers
     private var phase: Phase = .idle
 
-    public init(key: HoldKey = .fn) {
+    public init(key: HoldKey = .fn, paste: HoldModifiers? = nil) {
         self.key = key
+        self.paste = paste ?? key.pasteModifier
     }
 
     public var isHeld: Bool { phase != .idle }
 
     // One flagsChanged event at `time` (seconds on a monotonic clock).
     public mutating func handle(keycode: Int64, flags: HoldModifiers, at time: TimeInterval) -> Action? {
-        let paste = key.pasteModifier
         let flagSet = flags.contains(key.flag)
         switch phase {
         case .idle:
@@ -170,9 +172,11 @@ public struct HoldGesture {
     }
 
     // Holds `newKey` from now on. A recording in progress is cancelled.
-    public mutating func setKey(_ newKey: HoldKey) -> Action? {
-        guard newKey != key else { return nil }
+    public mutating func setKey(_ newKey: HoldKey, paste newPaste: HoldModifiers? = nil) -> Action? {
+        let newPaste = newPaste ?? newKey.pasteModifier
+        guard newKey != key || newPaste != paste else { return nil }
         key = newKey
+        paste = newPaste
         return reset()
     }
 

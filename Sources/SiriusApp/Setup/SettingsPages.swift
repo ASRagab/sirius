@@ -155,9 +155,11 @@ private struct KeysPane: View {
                 }
             }
             PillRow("Paste at cursor") { // TODO(copy): copy
-                Text(shortcuts.holdKey.pasteGlyph)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 14)
+                PillMenu(title: shortcuts.holdKey.pasteGlyph(shortcuts.pasteModifier)) {
+                    ForEach(PasteModifier.options(for: shortcuts.holdKey), id: \.self) { paste in
+                        Button(shortcuts.holdKey.pasteGlyph(paste)) { shortcuts.choose(paste: paste) }
+                    }
+                }
             }
             PillRow("Compose") { // TODO(copy): copy
                 Button(shortcuts.composeText) {

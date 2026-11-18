@@ -47,7 +47,7 @@ If you use Parrot with `fn` as its key, quit Parrot, or the key is handled twice
 **Hold `fn` and speak.** Let go when you are done. What you said goes to an agent as a message. A small pill near the bottom of the screen shows that Sirius is listening.
 
 * **To pick an agent, say its name first:** "Claude, …", "Codex, …", "Muse, …", "Cursor, …" or "Gemini, …". Without a name, the message goes to the agent you last chose in the composer.
-* **To dictate into any app, hold ⌃ and `fn`.** What you said is pasted where your cursor is, and no agent is involved.
+* **To dictate into any app, hold ⌃ and `fn`.** What you said is pasted where your cursor is, and no agent is involved. You can choose another modifier than ⌃ in Settings… → General.
 
 Speech is turned into text on your Mac. The first time, Sirius downloads the speech model (about 145 MB), and the pill shows the progress. If you already use Parrot, Sirius uses Parrot's model and your dictionary at `~/.config/parrot/dictionary`.
 
@@ -160,7 +160,7 @@ Open **Settings…** from the menu-bar menu, or press ⌘, while the menu is ope
 | Group | Setting | Notes |
 |---|---|---|
 | General | Hold to talk | `fn`, right ⌥, right ⌘ or ⌃ |
-| General | Paste at cursor | Follows from the hold key: ⌃ with it, or ⌃⇧ when the hold key is ⌃ |
+| General | Paste at cursor | The modifier you hold with the hold key to paste at the cursor: ⌃ by default, or ⇧, ⌥ or ⌘ |
 | General | Compose | Any key with ⌘, ⌃ or ⌥, or an F-key. Click it and press the new shortcut. |
 | Permissions | Microphone, Accessibility | Shows Allowed, or an Allow button |
 | Agents | One row per agent | See §7 |

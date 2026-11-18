@@ -16,6 +16,33 @@ final class HoldGestureTests: XCTestCase {
         XCTAssertEqual(HoldKey.control.pasteGlyph, "⌃⇧")
     }
 
+    // The paste modifier is the user's choice, any but the talk key's own;
+    // one stored for another key falls back to the standard one.
+    func testThePasteModifierCanBeChosen() throws {
+        XCTAssertEqual(PasteModifier.options(for: .fn), [.control, .shift, .option, .command])
+        XCTAssertEqual(PasteModifier.options(for: .control), [.shift, .option, .command])
+        XCTAssertEqual(HoldKey.fn.pasteGlyph(.option), "⌥fn")
+        XCTAssertEqual(HoldKey.rightCommand.pasteGlyph(.shift), "⇧ right ⌘")
+        let suite = "sirius-paste-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(Shortcuts.pasteModifier(for: .fn, in: defaults), .control)
+        Shortcuts.setPasteModifier(.option, in: defaults)
+        XCTAssertEqual(Shortcuts.pasteModifier(for: .fn, in: defaults), .option)
+        // Right Option as the talk key cannot also be the paste modifier.
+        XCTAssertEqual(Shortcuts.pasteModifier(for: .rightOption, in: defaults), .control)
+    }
+
+    func testAChosenModifierPastesAndControlNoLongerDoes() {
+        var gesture = HoldGesture(key: .fn, paste: .option)
+        XCTAssertEqual(gesture.handle(keycode: 58, flags: [.option, .fn], at: 0), .start(.paste))
+        XCTAssertEqual(gesture.handle(keycode: fn, flags: .option, at: 1), .transcribe)
+        // ⌃ with fn is now just a chord: ignored, nothing recorded.
+        XCTAssertEqual(gesture.handle(keycode: fn, flags: [.control, .fn], at: 2), nil)
+        XCTAssertEqual(gesture.handle(keycode: fn, flags: .control, at: 3), nil)
+        XCTAssertFalse(gesture.isHeld)
+    }
+
     func testEventFlagsKeepOnlyTheModifierBits() {
         // maskControl | maskSecondaryFn | maskNonCoalesced and device bits.
         XCTAssertEqual(HoldModifiers(eventFlags: 0x0004_0000 | 0x0080_0000 | 0x100 | 0x1), [.control, .fn])

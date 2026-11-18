@@ -124,9 +124,70 @@ public enum HoldKey: String, CaseIterable, Codable, Sendable {
     }
 }
 
+// The modifier held with the talk key to paste at the cursor instead.
+// The user picks it in Settings; any but the talk key's own.
+public enum PasteModifier: String, CaseIterable, Codable, Sendable {
+    case control
+    case shift
+    case option
+    case command
+
+    public var modifiers: HoldModifiers {
+        switch self {
+        case .control: .control
+        case .shift: .shift
+        case .option: .option
+        case .command: .command
+        }
+    }
+
+    public var glyph: String {
+        switch self {
+        case .control: "⌃"
+        case .shift: "⇧"
+        case .option: "⌥"
+        case .command: "⌘"
+        }
+    }
+
+    // The choices for a talk key: every modifier but its own.
+    public static func options(for key: HoldKey) -> [PasteModifier] {
+        allCases.filter { $0.modifiers != key.flag }
+    }
+
+    // The one used before it could be chosen: ⌃, or ⇧ when the talk key is ⌃.
+    public static func standard(for key: HoldKey) -> PasteModifier {
+        key == .control ? .shift : .control
+    }
+}
+
+extension HoldKey {
+    // The paste chord as a row or a log line shows it: ⌃fn, ⌃ right ⌥, ⌃⇧.
+    public func pasteGlyph(_ paste: PasteModifier) -> String {
+        switch self {
+        case .fn: "\(paste.glyph)fn"
+        case .rightOption, .rightCommand: "\(paste.glyph) \(glyph)"
+        case .control: "⌃\(paste.glyph)"
+        }
+    }
+}
+
 public enum Shortcuts {
     public static let composeKey = "shortcut.compose"
     public static let holdKey = "shortcut.hold_to_talk"
+    public static let pasteKey = "shortcut.paste_modifier"
+
+    // The paste modifier for `key`: the stored one if it can go with that
+    // key, else the standard one.
+    public static func pasteModifier(for key: HoldKey, in defaults: UserDefaults) -> PasteModifier {
+        guard let stored = defaults.string(forKey: pasteKey).flatMap(PasteModifier.init(rawValue:)),
+              PasteModifier.options(for: key).contains(stored) else { return .standard(for: key) }
+        return stored
+    }
+
+    public static func setPasteModifier(_ paste: PasteModifier, in defaults: UserDefaults) {
+        defaults.set(paste.rawValue, forKey: pasteKey)
+    }
 
     public static func compose(in defaults: UserDefaults) -> KeyCombo {
         guard let data = defaults.data(forKey: composeKey),
