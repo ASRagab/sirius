@@ -33,10 +33,6 @@ public enum MessageRenderer {
         }
         if let context = message.context { lines += [""] + contextLines(context, message: message.id) }
         lines.append("</sirius message=\"\(escape(message.id))\">")
-        // What Sirius itself has to tell the agent, e.g. where an aside the
-        // user closed is kept (AgentTurnQueue.note). Outside the wrapper:
-        // they are not the user's words.
-        for note in message.notes ?? [] { lines.append("[Sirius: \(note)]") }
         lines.append(replyNote)
         return lines.joined(separator: "\n")
     }

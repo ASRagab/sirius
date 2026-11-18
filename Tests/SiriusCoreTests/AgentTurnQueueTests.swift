@@ -54,9 +54,16 @@ final class AgentTurnQueueTests: XCTestCase {
         }
         XCTAssertEqual(said.all, [], "nothing to report when every write lands")
 
+        // The folder refuses new files, so the next session cannot be kept;
+        // the log, already open, still takes its lines.
         XCTAssertEqual(chmod(storage.directory.path, 0o500), 0)
         defer { chmod(storage.directory.path, 0o700) }
-        await queue.note("left for the next message")
+        await adapter.setTurnSession("thread-3")
+        try await queue.send(message(2))
+        try await adapter.waitForDeliveries(2)
+        for _ in 0..<500 where said.all.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
         XCTAssertEqual(said.all.count, 1, "\(said.all)")
         XCTAssertTrue(said.all.first?.contains("dev: state.json was not written") ?? false, "\(said.all)")
     }
@@ -476,7 +483,8 @@ final class FakeAdapter: Adapter, @unchecked Sendable {
     let startDelay: Double
     let startSession: String?
     let startModel: String?
-    let turnSession: String?
+    private(set) var turnSession: String?
+    func setTurnSession(_ session: String) { turnSession = session }
     let throwOn: Set<String>
     // Throws Outdated, a UserFacingError, on these.
     let outdatedOn: Set<String>

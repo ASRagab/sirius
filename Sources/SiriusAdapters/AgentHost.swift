@@ -12,11 +12,6 @@ import UniformTypeIdentifiers
 // The composer's seam is agents() and send(text:attachments:to:). The app
 // calls stopAll() on quit so no agent outlives Sirius.
 //
-// It also runs the asides (AsideSession): openAside forks an agent's
-// session into one, closeAside ends it, files what was said under the
-// agent's asides/ and leaves the agent a note of where (AsidePrompts
-// .closedNote), which goes with the user's next message to it.
-//
 // It also keeps working memory in check (WorkingMemory): it seeds WMEM.md
 // and gc.md beside the registry folder, and when WMEM.md is over the limit,
 // at start and whenever the file changes, it sends a cleanup turn from
@@ -34,8 +29,6 @@ public actor AgentHost {
         public var instructions: String?
         // workers.md, for Codex's worker agents.
         public var workerInstructions: String? = nil
-        // An aside's session (openAside): see AsideOptions.
-        public var aside: AsideOptions? = nil
     }
 
     public typealias AdapterFactory = @Sendable (AdapterContext) -> any Adapter
@@ -76,15 +69,6 @@ public actor AgentHost {
     private var uncleared: Set<String> = []
     private var memoryTrigger = WorkingMemoryTrigger()
     private var memoryWatcher: FileWatcher?
-
-    private struct OpenAside {
-        var session: AsideSession
-        // What opened it, as the note to the agent names it.
-        var topic: String
-    }
-
-    // By the aside's id.
-    private var asides: [String: OpenAside] = [:]
 
     // `commands` must be the queue `server` was created with, so commands
     // arriving on the agents' sockets are logged.
@@ -180,16 +164,14 @@ public actor AgentHost {
         switch context.registration.harness {
         case .claudeCode:
             ClaudeAdapter(registration: context.registration, socketPath: context.socketPath,
-                          helpersDirectory: context.helpersDirectory, systemPrompt: context.instructions,
-                          aside: context.aside)
+                          helpersDirectory: context.helpersDirectory, systemPrompt: context.instructions)
         case .codex:
             CodexAdapter(registration: context.registration, socketPath: context.socketPath,
                          helpersDirectory: context.helpersDirectory, instructions: context.instructions,
-                         workerInstructions: context.workerInstructions, aside: context.aside)
+                         workerInstructions: context.workerInstructions)
         case .museCode:
             MuseAdapter(registration: context.registration, socketPath: context.socketPath,
-                        helpersDirectory: context.helpersDirectory, instructions: context.instructions,
-                        aside: context.aside)
+                        helpersDirectory: context.helpersDirectory, instructions: context.instructions)
         }
     }
 
@@ -307,7 +289,6 @@ public actor AgentHost {
     // "dev" socket and the server stay.
     public func stopAll() async {
         stopped = true
-        for id in Array(asides.keys) { await closeAside(id) }
         memoryWatcher?.stop()
         memoryWatcher = nil
         let all = order.compactMap { id in hosted[id].map { (id, $0.queue) } }
@@ -471,81 +452,6 @@ public actor AgentHost {
         }
         return id
     }
-
-    // MARK: Asides
-
-    // Opens an aside on `agent`: a fork of its session as it is now, on an
-    // adapter of its own, started at once so the first turn finds it warm.
-    // `topic` is what opened it, the user's words or the agent's brief.
-    // Nothing is sent yet; the caller sends the first turn and reads
-    // `events`.
-    public func openAside(agent: String, topic: String) throws -> AsideSession {
-        guard !stopped, let hosted = hosted[agent] else { throw AgentHostError.unknownAgent(agent) }
-        let parent = try? hosted.storage.readState().session
-        let socketPath = (try? server.socketPath(for: agent)) ?? ""
-        let registration = hosted.entry.registration
-        let helpers = helpersDirectory, makeAdapter = makeAdapter
-        let session = AsideSession(agent: agent, parent: parent) { options in
-            makeAdapter(AdapterContext(registration: registration, socketPath: socketPath,
-                                       helpersDirectory: helpers, instructions: nil, aside: options))
-        }
-        asides[session.id] = OpenAside(session: session, topic: topic)
-        report("Sirius: \(agent): aside \(session.id) opened" + (parent == nil ? " (no session to fork)" : ""))
-        Task { await session.warm() }
-        return session
-    }
-
-    // The aside's next turn: `text` as the user typed it, each attachment
-    // copied into the agent's attachments/ first, as send does. Returns
-    // once queued; the answer comes on the aside's `events`.
-    public func sendAside(_ id: String, text: String, attachments: [URL] = [],
-                          context: Message.Context? = nil) async throws {
-        guard let aside = asides[id], let hosted = hosted[aside.session.agent] else {
-            throw AgentHostError.unknownAgent(id)
-        }
-        let copied = try hosted.storage.addAttachments(copying: attachments, to: MessageID.make(),
-                                                       mimeType: Self.mimeType(of:))
-        await aside.session.send(text, attachments: copied, context: context)
-    }
-
-    // Ends the aside. When the agent said anything in it, what was said is
-    // written to the agent's asides/<id>.md and the agent is left a note
-    // pointing there, for the user's next message to it.
-    public func closeAside(_ id: String) async {
-        guard let aside = asides.removeValue(forKey: id) else { return }
-        await aside.session.close()
-        let transcript = await aside.session.transcript
-        let agent = aside.session.agent
-        report("Sirius: \(agent): aside \(id) closed after \(transcript.count) turn(s)")
-        guard transcript.contains(where: { $0.role == .agent }), let hosted = hosted[agent] else { return }
-        let file: URL?
-        do {
-            file = try Self.writeTranscript(transcript, id: id, topic: aside.topic, to: hosted.storage)
-        } catch {
-            // The agent is still told of the aside, without a file to read.
-            report("Sirius: \(agent): aside \(id): its transcript was not saved: \(error.localizedDescription)")
-            file = nil
-        }
-        let exchanges = transcript.filter { $0.role == .user }.count
-        await hosted.queue.note(AsidePrompts.closedNote(topic: AsidePrompts.topic(of: aside.topic),
-                                                        turns: exchanges, transcript: file?.path))
-    }
-
-    // The aside as Markdown, in the agent's asides/ folder.
-    static func writeTranscript(_ transcript: [AsideSession.Turn], id: String, topic: String,
-                                to storage: AgentStorage) throws -> URL {
-        let folder = storage.directory.appendingPathComponent("asides", isDirectory: true)
-        try storage.prepare()
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        var lines = ["# Aside: \(AsidePrompts.topic(of: topic))", ""]
-        for turn in transcript {
-            lines += [turn.role == .user ? "## User" : "## Agent", "", turn.text, ""]
-        }
-        let url = folder.appendingPathComponent("\(id).md")
-        try Data(lines.joined(separator: "\n").utf8).write(to: url, options: .atomic)
-        return url
-    }
-
 
     // The file's UTType's MIME type; application/octet-stream when it has none.
     static func mimeType(of url: URL) -> String {

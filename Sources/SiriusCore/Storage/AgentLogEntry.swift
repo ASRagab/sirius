@@ -111,7 +111,7 @@ public struct AgentLogEntry: Equatable, Sendable {
 // log's jobs (recovery and debugging) need what was shown, not the pixels.
 public struct CommandSummary: Equatable, Sendable, Codable {
     // The text kept per command. Equal to the longest text any built method
-    // accepts (speak), so today nothing is cut; dialog and aside may be.
+    // accepts (speak), so today nothing is cut; dialog may be.
     public static let maxTextChars = Limits.maxSpeakChars
 
     public var kind: DisplayKind?

@@ -33,6 +33,19 @@ final class AgentStorageTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: storage.directory.path), ["state.json"])
     }
 
+    // A state.json or a message written while notes existed still loads;
+    // the notes are dropped.
+    func testAStateOrMessageWithNotesStillLoads() throws {
+        let storage = try AgentStorage(agent: "claude", baseDirectory: baseDirectory)
+        try storage.writeState(AgentState())
+        try Data(#"{"notes":["An aside was closed"],"session":"sess-1"}"#.utf8).write(to: storage.stateURL)
+        XCTAssertEqual(try storage.readState(), AgentState(session: "sess-1"))
+
+        let line = #"{"id":"m_1","agent":"claude","text":"hi","attachments":[],"notes":["An aside was closed"]}"#
+        let message = try JSONDecoder().decode(Message.self, from: Data(line.utf8))
+        XCTAssertEqual(message, Message(id: "m_1", agent: "claude", text: "hi"))
+    }
+
     func testMessageIds() {
         let ids = (0..<500).map { _ in MessageID.make() }
         XCTAssertEqual(Set(ids).count, ids.count)

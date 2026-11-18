@@ -18,10 +18,6 @@ import SiriusProtocol
 // running or queued and the context at the threshold, the queue consolidates
 // the agent as a step of its own: a message sent meanwhile waits behind it
 // rather than joining it, and goes once it is done.
-//
-// A note (note()) is a line from Sirius itself that the agent should have
-// but that is not worth a turn: it goes beside the user's next message
-// (Message.notes) and is kept in state.json until a turn has taken it.
 public actor AgentTurnQueue {
     private let adapter: any Adapter
     private let log: AgentLog
@@ -59,8 +55,6 @@ public actor AgentTurnQueue {
     // Runs out after the policy's idle time; a send or the next turn's end
     // replaces or cancels it.
     private var idleTimer: Task<Void, Never>?
-    // Waiting for the user's next message; see the header.
-    private var notes: [String]
 
     public init(adapter: any Adapter, log: AgentLog, storage: AgentStorage,
                 consolidation: ConsolidationPolicy? = nil,
@@ -75,7 +69,6 @@ public actor AgentTurnQueue {
         self.onFailure = onFailure
         self.onUserError = onUserError
         self.pending = log.requeued.map { Self.deliverable($0.message(agent: storage.agent)) }
-        self.notes = (try? storage.readState().notes) ?? []
     }
 
     // Whether the agent process is up. Whether a turn is running is not
@@ -97,33 +90,6 @@ public actor AgentTurnQueue {
         return .starting
     }
 
-    // Keeps `text` for the agent, to go beside the user's next message.
-    public func note(_ text: String) {
-        notes.append(text)
-        persistNotes()
-    }
-
-    // The notes waiting, for tests and diagnostics.
-    public func pendingNotes() -> [String] {
-        notes
-    }
-
-    // The message with the notes waiting beside it. A peer's message
-    // carries none: they are for the turn the user starts.
-    private func noted(_ message: Message) -> Message {
-        guard message.peerSender == nil, !notes.isEmpty else { return message }
-        var carrying = message
-        carrying.notes = notes
-        return carrying
-    }
-
-    // The agent has taken in `message`'s notes: they stop waiting.
-    private func delivered(notesOf message: Message) {
-        guard let taken = message.notes, !taken.isEmpty else { return }
-        notes.removeFirst(min(taken.count, notes.count))
-        persistNotes()
-    }
-
     // A line for the log. The turn goes on when it cannot be written, and
     // the failure is reported rather than dropped.
     private func filed(_ write: () async throws -> Void) async {
@@ -134,25 +100,13 @@ public actor AgentTurnQueue {
         }
     }
 
-    private func persistNotes() {
-        var state = (try? storage.readState()) ?? AgentState()
-        state.notes = notes.isEmpty ? nil : notes
-        do {
-            try storage.writeState(state)
-        } catch {
-            report("\(storage.agent): state.json was not written: \(error.localizedDescription)")
-        }
-    }
-
     // Logs the message and queues it. Returns at once; the turn runs later.
     public func send(_ message: Message) async throws {
         guard !stopped else { throw AgentTurnQueueError.stopped }
         idleTimer?.cancel()
         try await log.messageReceived(message)
         if let turn = current, pending.isEmpty, started, capabilities.steer {
-            let carrying = noted(message)
-            if await adapter.steer(carrying) == .joined {
-                delivered(notesOf: carrying)
+            if await adapter.steer(message) == .joined {
                 await filed { try await log.turnJoined(message: message.id, turn: turn) }
                 if current == turn {
                     joined.append(message.id)
@@ -271,9 +225,7 @@ public actor AgentTurnQueue {
         current = message.id
         joined = []
         do {
-            let carrying = noted(message)
-            let end = try await adapter.prompt(carrying)
-            if case .completed = end.outcome { delivered(notesOf: carrying) }
+            let end = try await adapter.prompt(message)
             if let session = end.session { persist(session) }
             for id in finished(message) { await filed { try await log.turnEnded(message: id, end) } }
             if case .failed(let reason) = end.outcome { onFailure(reason) }

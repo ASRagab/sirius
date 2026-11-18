@@ -13,9 +13,6 @@ public struct Message: Equatable, Sendable, Codable {
     // clean up working memory (WorkingMemory in SiriusCore).
     public var fromSirius: Bool
     public var attachments: [Attachment]
-    // Lines from Sirius itself, given to the agent beside the message and
-    // outside the user's words (MessageRenderer). Absent on most messages.
-    public var notes: [String]?
     // What the app in front had open and selected when the user wrote the
     // message, as the user saw it listed in the composer (the Ambient
     // Context Protocol; AmbientContext in SiriusCore). Absent on most
@@ -120,22 +117,21 @@ public struct Message: Equatable, Sendable, Codable {
     }
 
     public init(id: String, agent: String, text: String, attachments: [Attachment] = [], peerSender: String? = nil,
-                notes: [String]? = nil, fromSirius: Bool = false, context: Context? = nil) {
+                fromSirius: Bool = false, context: Context? = nil) {
         self.id = id
         self.agent = agent
         self.text = text
         self.peerSender = peerSender
         self.fromSirius = fromSirius
         self.attachments = attachments
-        self.notes = notes
         self.context = context
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, agent, text, peerSender, fromSirius, attachments, notes, context
+        case id, agent, text, peerSender, fromSirius, attachments, context
     }
 
-    // fromSirius may be absent: false. notes and context may be absent: nil.
+    // fromSirius may be absent: false. context may be absent: nil.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -144,7 +140,6 @@ public struct Message: Equatable, Sendable, Codable {
         peerSender = try container.decodeIfPresent(String.self, forKey: .peerSender)
         fromSirius = try container.decodeIfPresent(Bool.self, forKey: .fromSirius) ?? false
         attachments = try container.decode([Attachment].self, forKey: .attachments)
-        notes = try container.decodeIfPresent([String].self, forKey: .notes)
         context = try container.decodeIfPresent(Context.self, forKey: .context)
     }
 }

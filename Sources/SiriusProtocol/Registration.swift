@@ -93,13 +93,9 @@ public struct AgentRegistration: Equatable, Sendable, Codable {
 public struct AgentState: Equatable, Sendable, Codable {
     // Resume id: Claude session, Codex thread. Absent until the first turn.
     public var session: String?
-    // What Sirius has yet to tell the agent with its next message
-    // (AgentTurnQueue.note), kept here so a restart doesn't lose it.
-    public var notes: [String]?
 
-    public init(session: String? = nil, notes: [String]? = nil) {
+    public init(session: String? = nil) {
         self.session = session
-        self.notes = notes
     }
 }
 
