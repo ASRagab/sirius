@@ -44,7 +44,12 @@ struct AccessibilityReader {
         switch app.shape {
         case .folder:
             reading.items = selectedFiles(in: window, deadline: deadline)
-        case .document, .conversation:
+        case .document:
+            // First, with time of its own: it is quick, and the search for
+            // a selection may use all of the rest.
+            if app.id == "com.apple.Notes" {
+                describeNote(in: window, deadline: Date().addingTimeInterval(budget / 2), into: &reading)
+            }
             // The focused element first: when it is the text, no search.
             if let focused = element(application, kAXFocusedUIElementAttribute), let text = selection(of: focused) {
                 reading.selectedText = text
@@ -71,8 +76,11 @@ struct AccessibilityReader {
             seen += 1
             // A toolbar holds the address and search fields, whose selection
             // is not what the user is reading.
-            if isSecure(next) || string(next, kAXRoleAttribute) == "AXToolbar" { continue }
-            if !described, string(next, kAXRoleAttribute) == "AXWebArea" {
+            // Nor is a row of a list beside the document (the notes, the
+            // mailboxes, a PDF's thumbnails), and those are most of a window.
+            let role = string(next, kAXRoleAttribute)
+            if isSecure(next) || role == "AXToolbar" || role == "AXOutline" || role == "AXTable" { continue }
+            if !described, role == "AXWebArea" {
                 describe(next, into: &reading)
                 described = true
             }
@@ -107,6 +115,51 @@ struct AccessibilityReader {
         if let title = string(area, kAXTitleAttribute) ?? string(area, kAXDescriptionAttribute), !title.isEmpty {
             reading.documentTitle = title
         }
+    }
+
+    // Notes gives a note no address and no id, and its window is titled
+    // for the folder. What names the note is beside it: the folder selected
+    // in the sidebar, and the note's row in the list, whose texts are its
+    // title, a snippet and when it was changed, in that order. The snippet
+    // is not taken.
+    private func describeNote(in window: AXUIElement, deadline: Date, into reading: inout AccessibilityReading) {
+        var queue = [window]
+        var seen = 0
+        while !queue.isEmpty, seen < maxElements, Date() < deadline {
+            let next = queue.removeFirst()
+            seen += 1
+            let role = string(next, kAXRoleAttribute)
+            if role == "AXOutline" || role == "AXTable", let row = elements(next, kAXSelectedRowsAttribute).first {
+                let texts = staticTexts(in: row)
+                if role == "AXOutline" {
+                    if let folder = texts.first { reading.details["folder"] = folder }
+                } else if let title = texts.first {
+                    reading.documentTitle = title
+                    if texts.count > 1, let changed = texts.last, changed.contains(where: \.isNumber) {
+                        reading.details["modified"] = changed
+                    }
+                }
+                continue
+            }
+            // The note's own text holds no list.
+            if role == "AXTextArea" { continue }
+            queue.append(contentsOf: children(next))
+        }
+    }
+
+    private func staticTexts(in row: AXUIElement) -> [String] {
+        var found: [String] = []
+        var queue = [row]
+        var seen = 0
+        while !queue.isEmpty, seen < 40 {
+            let next = queue.removeFirst()
+            seen += 1
+            if string(next, kAXRoleAttribute) == "AXStaticText", let value = string(next, kAXValueAttribute), !value.isEmpty {
+                found.append(value)
+            }
+            queue.append(contentsOf: children(next))
+        }
+        return found
     }
 
     private func firstWebArea(in window: AXUIElement, deadline: Date) -> AXUIElement? {
@@ -260,6 +313,7 @@ enum AccessibilityProbe {
         print("  document title: \(describe(reading.documentTitle))")
         print("  selected text: \(describe(reading.selectedText))")
         print("  items: \(reading.items.count)")
+        for (key, value) in reading.details.sorted(by: { $0.key < $1.key }) { print("  \(key): \(describe(value))") }
         for item in reading.items.prefix(5) { print("    title \(describe(item.title)), url \(describe(item.url))") }
         if let snapshot = AccessibilityContext.snapshot(reading, app: app, pid: running.processIdentifier) {
             let summary = snapshot.summary

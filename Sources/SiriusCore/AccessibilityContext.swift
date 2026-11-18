@@ -14,8 +14,6 @@ public struct NativeApp: Equatable, Sendable {
         // A window on one document: its address and title, and the
         // selected text in it. The subrole says what kind.
         case document(String)
-        // A window on a conversation; the selection is in one message.
-        case conversation
         // A window on a folder; the selection is files.
         case folder
     }
@@ -23,24 +21,23 @@ public struct NativeApp: Equatable, Sendable {
     public let id: String
     public let name: String
     public let shape: Shape
-    // Read without being switched on first.
+    // Read without being switched on first. An app that is off is opt in:
+    // read only once the user turns it on in Settings.
     public let onByDefault: Bool
-    // Off by default, and the user is asked once, the first time the
-    // composer opens over it, whether to turn it on.
-    public let asks: Bool
+    // What it shows is often someone else's words. Sirius warns before the
+    // first message that carries context from a sensitive app.
+    public let sensitive: Bool
 }
 
 public enum NativeApps {
+    // Messages is left out: every bubble on screen is readable there, and
+    // it is someone else's words.
     public static let all: [NativeApp] = [
-        NativeApp(id: "com.apple.Preview", name: "Preview", shape: .document("pdf"), onByDefault: true, asks: false),
-        NativeApp(id: "com.apple.Notes", name: "Notes", shape: .document("note"), onByDefault: true, asks: false),
-        NativeApp(id: "com.apple.Safari", name: "Safari", shape: .document("page"), onByDefault: true, asks: false),
-        NativeApp(id: "com.apple.finder", name: "Finder", shape: .folder, onByDefault: true, asks: false),
-        NativeApp(id: "com.apple.mail", name: "Mail", shape: .document("message"), onByDefault: false, asks: true),
-        // Someone else's words, and every bubble on screen is readable:
-        // on only from Settings.
-        NativeApp(id: "com.apple.MobileSMS", name: "Messages", shape: .conversation, onByDefault: false,
-                  asks: false),
+        NativeApp(id: "com.apple.Preview", name: "Preview", shape: .document("pdf"), onByDefault: true, sensitive: false),
+        NativeApp(id: "com.apple.Notes", name: "Notes", shape: .document("note"), onByDefault: true, sensitive: false),
+        NativeApp(id: "com.apple.Safari", name: "Safari", shape: .document("page"), onByDefault: true, sensitive: false),
+        NativeApp(id: "com.apple.finder", name: "Finder", shape: .folder, onByDefault: true, sensitive: false),
+        NativeApp(id: "com.apple.mail", name: "Mail", shape: .document("message"), onByDefault: false, sensitive: true),
     ]
 
     public static func app(_ bundleID: String) -> NativeApp? {
@@ -74,16 +71,20 @@ public struct AccessibilityReading: Equatable, Sendable {
     public var selectedText: String?
     // The selected files (Finder).
     public var items: [Item]
+    // More that names the document, by attribute name: a note's folder and
+    // when it was last changed.
+    public var details: [String: String]
 
     public init(
         windowTitle: String? = nil, documentURL: String? = nil, documentTitle: String? = nil,
-        selectedText: String? = nil, items: [Item] = []
+        selectedText: String? = nil, items: [Item] = [], details: [String: String] = [:]
     ) {
         self.windowTitle = windowTitle
         self.documentURL = documentURL
         self.documentTitle = documentTitle
         self.selectedText = selectedText
         self.items = items
+        self.details = details
     }
 }
 
@@ -134,15 +135,10 @@ public enum AccessibilityContext {
             // the page count to it.
             let name = clean(reading.documentTitle) ?? fileName(url) ?? title
             guard name != nil || url != nil || selection != nil else { return nil }
+            var details: [String: AmbientJSON] = [:]
+            for (key, value) in reading.details { if let value = clean(value) { details[key] = .string(value) } }
             inner = AmbientElement(id: "document", role: "Document", subrole: kind, title: name, url: url, focused: true,
-                                   children: selection.map { [$0] } ?? [])
-        case .conversation:
-            guard title != nil || selection != nil else { return nil }
-            let row = selection.map {
-                AmbientElement(id: "message", role: "Row", subrole: "message", focused: true, children: [$0])
-            }
-            inner = AmbientElement(id: "conversation", role: "List", subrole: "conversation", title: title, focused: true,
-                                   children: row.map { [$0] } ?? [])
+                                   children: selection.map { [$0] } ?? [], attributes: details.isEmpty ? nil : details)
         case .folder:
             let rows = reading.items.prefix(maxItems).enumerated().compactMap { index, item -> AmbientElement? in
                 let name = clean(item.title), url = clean(item.url)

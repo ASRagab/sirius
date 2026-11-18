@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import SiriusCore
+import SiriusProtocol
 
 final class AccessibilityContextTests: XCTestCase {
     private func app(_ id: String) throws -> NativeApp { try XCTUnwrap(NativeApps.app(id)) }
@@ -49,7 +50,6 @@ final class AccessibilityContextTests: XCTestCase {
         XCTAssertNil(try snapshot(AccessibilityReading(), "com.apple.Preview"))
         XCTAssertNil(try snapshot(AccessibilityReading(windowTitle: "  ", selectedText: "\n"), "com.apple.Notes"))
         XCTAssertNil(try snapshot(AccessibilityReading(), "com.apple.finder"))
-        XCTAssertNil(try snapshot(AccessibilityReading(), "com.apple.MobileSMS"))
     }
 
     func testSelectedFilesAreRowsWithTheirAddresses() throws {
@@ -67,12 +67,16 @@ final class AccessibilityContextTests: XCTestCase {
                        AmbientSummary(subject: "Downloads", selection: "a.txt"))
     }
 
-    func testAConversationsSelectionIsOneMessage() throws {
-        let reading = AccessibilityReading(windowTitle: "Ada", selectedText: "see you at six")
-        let answer = try XCTUnwrap(try snapshot(reading, "com.apple.MobileSMS"))
-        XCTAssertEqual(answer.tree.focusPath.map(\.role), ["Window", "List", "Row", "Text"])
-        XCTAssertEqual(answer.tree.focusPath[1].subrole, "conversation")
-        XCTAssertEqual(answer.summary, AmbientSummary(subject: "Ada", selection: "“see you at six”"))
+    func testANoteIsNamedByItsTitleFolderAndDate() throws {
+        let reading = AccessibilityReading(windowTitle: "Notes – 214 notes", documentTitle: "Trip to Lisbon",
+                                           details: ["folder": "Travel", "modified": "10:42", "blank": " "])
+        let answer = try XCTUnwrap(try snapshot(reading, "com.apple.Notes"))
+        let note = answer.tree.focusPath[1]
+        XCTAssertEqual(note.title, "Trip to Lisbon")
+        XCTAssertEqual(note.attributes, ["folder": .string("Travel"), "modified": .string("10:42")])
+        XCTAssertEqual(answer.summary, AmbientSummary(subject: "Trip to Lisbon"))
+        XCTAssertTrue(MessageRenderer.render(Message(id: "m_1", agent: "claude", text: "x", context: answer.messageContext))
+            .contains("folder=\"Travel\""))
     }
 
     // The line quotes how the selection begins, cut at a word.
@@ -102,18 +106,19 @@ final class AccessibilityContextTests: XCTestCase {
     }
 
     func testTheListAndItsDefaults() throws {
-        XCTAssertEqual(NativeApps.all.map(\.name), ["Preview", "Notes", "Safari", "Finder", "Mail", "Messages"])
+        XCTAssertEqual(NativeApps.all.map(\.name), ["Preview", "Notes", "Safari", "Finder", "Mail"])
         XCTAssertNil(NativeApps.app("com.google.Chrome"))
         let suite = "sirius-native-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         XCTAssertEqual(NativeApps.all.filter { NativeApps.isOn($0, in: defaults) }.map(\.name),
                        ["Preview", "Notes", "Safari", "Finder"])
-        XCTAssertEqual(NativeApps.all.filter(\.asks).map(\.name), ["Mail"])
-        let messages = try app("com.apple.MobileSMS"), preview = try app("com.apple.Preview")
-        defaults.set(true, forKey: NativeApps.key(messages))
+        XCTAssertEqual(NativeApps.all.filter(\.sensitive).map(\.name), ["Mail"])
+        XCTAssertNil(NativeApps.app("com.apple.MobileSMS"))
+        let mail = try app("com.apple.mail"), preview = try app("com.apple.Preview")
+        defaults.set(true, forKey: NativeApps.key(mail))
         defaults.set(false, forKey: NativeApps.key(preview))
-        XCTAssertTrue(NativeApps.isOn(messages, in: defaults))
+        XCTAssertTrue(NativeApps.isOn(mail, in: defaults))
         XCTAssertFalse(NativeApps.isOn(preview, in: defaults))
     }
 
