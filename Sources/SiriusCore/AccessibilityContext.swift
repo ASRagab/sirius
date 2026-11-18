@@ -235,10 +235,14 @@ public enum ContextProviders {
     public struct Seen: Codable, Equatable, Sendable, Identifiable {
         public var id: String
         public var name: String
+        // Where the app was running from, for its icon: an app built
+        // locally may not be one the system can find by its identifier.
+        public var path: String?
 
-        public init(id: String, name: String) {
+        public init(id: String, name: String, path: String? = nil) {
             self.id = id
             self.name = name
+            self.path = path
         }
     }
 
@@ -251,15 +255,18 @@ public enum ContextProviders {
         return (try? JSONDecoder().decode([Seen].self, from: data)) ?? []
     }
 
-    // Remembers the app, or its new name. Returns whether anything changed.
+    // Remembers the app, or its new name or place. Returns whether anything
+    // changed.
     @discardableResult
-    public static func note(id: String, name: String, in defaults: UserDefaults) -> Bool {
+    public static func note(id: String, name: String, path: String? = nil, in defaults: UserDefaults) -> Bool {
         var all = seen(in: defaults)
         if let index = all.firstIndex(where: { $0.id == id }) {
-            guard all[index].name != name else { return false }
+            let place = path ?? all[index].path
+            guard all[index].name != name || all[index].path != place else { return false }
             all[index].name = name
+            all[index].path = place
         } else {
-            all.append(Seen(id: id, name: name))
+            all.append(Seen(id: id, name: name, path: path))
             if all.count > maxSeen { all.removeFirst(all.count - maxSeen) }
         }
         guard let data = try? JSONEncoder().encode(all) else { return false }

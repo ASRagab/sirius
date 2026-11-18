@@ -36,8 +36,8 @@ final class SettingsModelTests: XCTestCase {
     }
 
     func testSidebarOrderAndStart() {
-        XCTAssertEqual(SettingsSection.allCases.map(\.title), ["Keys", "Permissions", "Agents", "Context", "Dictation"])
-        XCTAssertEqual(model(existing: []).section, .keys)
+        XCTAssertEqual(SettingsSection.allCases.map(\.title), ["General", "Permissions", "Agents", "Context", "Dictation"])
+        XCTAssertEqual(model(existing: []).section, .general)
     }
 
     func testFocusThenBackReturnsToTheList() {
@@ -53,7 +53,7 @@ final class SettingsModelTests: XCTestCase {
     func testSelectingASectionLeavesTheFocusedAgent() {
         let model = model(existing: [registration(.codex)])
         model.focus(.codex)
-        model.select(.keys)
+        model.select(.general)
         model.select(.agents)
         XCTAssertNil(model.focused, "Agents opens on the list again")
     }

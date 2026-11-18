@@ -311,8 +311,9 @@ enum FrontAppContext {
         if let answer = await AmbientContextSource().context(frontPID: pid, bundleID: bundleID) {
             // Remembered, so Settings can list it: the app in front, which
             // a helper may have answered for.
-            let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? answer.appName
-            ContextProviders.note(id: bundleID, name: name, in: defaults)
+            let running = NSRunningApplication(processIdentifier: pid)
+            ContextProviders.note(id: bundleID, name: running?.localizedName ?? answer.appName,
+                                  path: running?.bundleURL?.path, in: defaults)
             return answer
         }
         guard let app = NativeApps.app(bundleID), NativeApps.isOn(app, in: defaults), AccessibilityReader.isTrusted

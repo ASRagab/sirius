@@ -64,7 +64,13 @@ struct SettingsView: View {
     @ViewBuilder
     private var content: some View {
         switch model.section {
-        case .keys: KeysPane(shortcuts: model.shortcuts, window: { [weak model] in model?.window })
+        case .general:
+            // Keys, then how long toasts stay: what is about Sirius itself
+            // and no one agent.
+            VStack(alignment: .leading, spacing: 26) {
+                KeysPane(shortcuts: model.shortcuts, window: { [weak model] in model?.window })
+                ToastsGroup()
+            }
         case .permissions: PermissionsPane(grants: model.grants)
         case .agents:
             if let harness = model.focused, let agent = model.agent(harness) {
@@ -207,7 +213,6 @@ private struct AgentsPane: View {
                 SettingsAgentRow(agent: agent) { model.focus(agent.harness) }
             }
         }
-        ToastsGroup()
     }
 }
 
@@ -443,7 +448,7 @@ private struct ContextPane: View {
                             .foregroundStyle(.tertiary)
                     }
                     ForEach(context.providers) { provider in
-                        ContextAppRow(bundleID: provider.id, name: provider.name,
+                        ContextAppRow(bundleID: provider.id, name: provider.name, path: provider.path,
                                       note: ContextWarnings.isSensitive(provider.id) ? Self.sensitiveNote : nil, isOn: Binding(
                             get: { context.isOn(provider) }, set: { context.set(provider, on: $0) }))
                     }
@@ -467,9 +472,11 @@ private struct ContextPane: View {
                 }
                 .disabled(!context.enabled)
             }
-            .padding(.trailing, 4)
+            .padding(.trailing, 14)
         }
-        .scrollIndicators(.never)
+        // Shown when the list is longer than the window, so it is plain
+        // there is more below.
+        .scrollIndicators(.visible)
     }
 
     static let sensitiveNote = "Sensitive: Sirius warns before sending." // TODO(copy): copy
@@ -486,6 +493,7 @@ private struct ContextPane: View {
 private struct ContextAppRow: View {
     let bundleID: String
     let name: String
+    var path: String?
     let note: String?
     @Binding var isOn: Bool
     @Environment(\.isEnabled) private var isEnabled
@@ -493,7 +501,7 @@ private struct ContextAppRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Group {
-                if let icon = Self.icon(bundleID) {
+                if let icon = Self.icon(bundleID, path: path) {
                     Image(nsImage: icon).resizable().interpolation(.high)
                 } else {
                     Image(systemName: "app.dashed").resizable().foregroundStyle(.secondary)
@@ -515,8 +523,13 @@ private struct ContextAppRow: View {
         .opacity(isEnabled ? 1 : 0.5)
     }
 
-    private static func icon(_ bundleID: String) -> NSImage? {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
-        return NSWorkspace.shared.icon(forFile: url.path)
+    // The app where the system finds it; failing that where it last ran
+    // from, or where it is running now.
+    private static func icon(_ bundleID: String, path: String?) -> NSImage? {
+        let found = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)?.path
+            ?? path.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+            ?? NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.bundleURL?.path
+        guard let found else { return nil }
+        return NSWorkspace.shared.icon(forFile: found)
     }
 }

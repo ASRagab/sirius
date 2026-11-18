@@ -8,7 +8,7 @@ import SwiftUI
 
 // The Settings window, opened from the menu's Settings… (⌘,). Parrot's
 // pills and rows (Pill.swift) in a 700 × 560 window with a 200 pt sidebar
-// of Keys, Permissions, Agents and Dictation. Agents opens on a list of the
+// of General, Permissions, Agents, Context and Dictation. Agents opens on a list of the
 // agents; a click puts one in focus under a bare "‹".
 //
 // It shows only what Sirius stores: the two shortcuts (Shortcuts, through
@@ -109,11 +109,11 @@ final class SettingsWindow {
 
 // The sidebar's sections, in its order.
 enum SettingsSection: String, CaseIterable, Hashable {
-    case keys, permissions, agents, context, dictation
+    case general, permissions, agents, context, dictation
 
     var title: String {
         switch self {
-        case .keys: "Keys" // TODO(copy): copy
+        case .general: "General" // TODO(copy): copy
         case .permissions: "Permissions" // TODO(copy): copy
         case .agents: "Agents" // TODO(copy): copy
         case .context: "Context" // TODO(copy): copy
@@ -123,7 +123,7 @@ enum SettingsSection: String, CaseIterable, Hashable {
 
     var symbol: String {
         switch self {
-        case .keys: "keyboard"
+        case .general: "gearshape"
         case .permissions: "hand.raised"
         case .agents: "person.2"
         case .context: "text.viewfinder"
@@ -153,7 +153,7 @@ final class SettingsModel: ObservableObject {
     private var forwarding: [AnyCancellable] = []
 
     init(agents: [AgentChoice], shortcuts: ShortcutsModel, dictation: TranscriptionModel,
-         section: SettingsSection = .keys, context: ContextSettings? = nil,
+         section: SettingsSection = .general, context: ContextSettings? = nil,
          write: @escaping (AgentRegistration) throws -> Void, onSave: @escaping () -> Void = {}) {
         self.agents = agents
         self.shortcuts = shortcuts

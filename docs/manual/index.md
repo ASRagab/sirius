@@ -157,12 +157,12 @@ Open **Settings…** from the menu-bar menu, or press ⌘, while the menu is ope
 
 | Group | Setting | Notes |
 |---|---|---|
-| Keys | Hold to talk | `fn`, right ⌥, right ⌘ or ⌃ |
-| Keys | Paste at cursor | Follows from the hold key: ⌃ with it, or ⌃⇧ when the hold key is ⌃ |
-| Keys | Compose | Any key with ⌘, ⌃ or ⌥, or an F-key. Click it and press the new shortcut. |
+| General | Hold to talk | `fn`, right ⌥, right ⌘ or ⌃ |
+| General | Paste at cursor | Follows from the hold key: ⌃ with it, or ⌃⇧ when the hold key is ⌃ |
+| General | Compose | Any key with ⌘, ⌃ or ⌥, or an F-key. Click it and press the new shortcut. |
 | Permissions | Microphone, Accessibility | Shows Allowed, or an Allow button |
 | Agents | One row per agent | See §7 |
-| Toasts | Stay for | How long a toast stays before it leaves by itself: 3, 5, 8 or 12 seconds (3 by default), up to twice that for a long one. Alerts stay until you dismiss them. |
+| General | Toasts stay for | How long a toast stays before it leaves by itself: 3, 5, 8 or 12 seconds (3 by default), up to twice that for a long one. Alerts stay until you dismiss them. |
 | Context | Send ambient context | Off: no message carries context from any app |
 | Context | Warn before sending from sensitive apps | On: Sirius asks once more before a message carries context from Mail or Chrome |
 | Context | One switch per app | The apps that provide context, and the apps Sirius reads (§5) |
@@ -201,7 +201,7 @@ Sirius is signed and notarized, so the permissions you allowed stay allowed afte
 * Another app may be using the same key. Quit Parrot if it is running, or choose another hold key in Settings.
 * On some keyboards `fn` opens the emoji picker or changes the input source. Change that in System Settings → Keyboard → "Press 🌐 key to", or choose another hold key.
 
-**The compose shortcut does nothing.** Another app may have taken it. Choose another in Settings… → Keys. Compose in the menu always works.
+**The compose shortcut does nothing.** Another app may have taken it. Choose another in Settings… → General. Compose in the menu always works.
 
 **The agent does not answer.**
 

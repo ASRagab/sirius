@@ -55,7 +55,7 @@ enum SettingsSnapshots {
 
     private static var shots: [Shot] {
         [
-            Shot(name: "1-keys"),
+            Shot(name: "1-general"),
             Shot(name: "2-permissions") {
                 $0.grants.simulate(GrantState(accessibility: false, microphone: .granted))
                 $0.select(.permissions)
