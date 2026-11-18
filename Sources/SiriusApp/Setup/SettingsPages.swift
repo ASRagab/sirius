@@ -443,7 +443,7 @@ private struct ContextPane: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    heading("Providers", // TODO(copy): copy
+                    heading("Apps that share natively", // TODO(copy): copy
                             note: "These apps tell Sirius what you have open themselves.") // TODO(copy): copy
                     if context.providers.isEmpty {
                         Text("None yet. An app appears here the first time it gives Sirius context.") // TODO(copy): copy
@@ -458,15 +458,15 @@ private struct ContextPane: View {
                 }
                 .disabled(!context.enabled)
                 PillRow("Warn before sending from sensitive apps", // TODO(copy): copy
-                        note: "Mail and Chrome. Asks once more before the message goes.") { // TODO(copy): copy
+                        note: "Mail, Chrome and apps that say so. Asks once more before the message goes.") { // TODO(copy): copy
                     PillSwitch(label: "Warn before sending from sensitive apps", isOn: Binding(
                         get: { context.warns }, set: { context.warns = $0 }))
                 }
                 .disabled(!context.enabled)
                 VStack(alignment: .leading, spacing: 10) {
-                    heading("Native apps", // TODO(copy): copy
+                    heading("Onscreen", // TODO(copy): copy
                             // TODO(copy): copy
-                            note: "Sirius reads what is selected in these apps itself, through Accessibility.")
+                            note: "Sirius reads what is open and selected in these apps. Needs Accessibility.")
                     ForEach(NativeApps.all, id: \.id) { app in
                         ContextAppRow(bundleID: app.id, name: app.name,
                                       note: app.sensitive ? Self.sensitiveNote + " Off unless you turn it on." : nil, // TODO(copy): copy

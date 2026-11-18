@@ -93,8 +93,8 @@ release-runbook.md  ·  “Before the release, check…”
 
 **Which apps.** Context comes in two ways.
 
-* **Providers.** An app built for it tells Sirius what you have open, and decides what it shares. Each one appears in Settings… → Context the first time it gives Sirius context.
-* **Native apps.** For a short fixed list of Apple's apps, Sirius reads what is open and selected itself, through the Accessibility permission you gave it at setup.
+* **Apps that share natively.** An app built for it tells Sirius what you have open, and decides what it shares. Each one appears in Settings… → Context the first time it gives Sirius context.
+* **Onscreen.** For a short fixed list of apps, Sirius reads what is open and selected itself, through the Accessibility permission you gave it at setup.
 
     | App | What is sent | At first |
     |---|---|---|
