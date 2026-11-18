@@ -408,6 +408,9 @@ final class ContextSettings: ObservableObject {
         }
     }
 
+    // On Sirius's list, or an app that has marked its own context so.
+    func isSensitive(_ id: String) -> Bool { ContextWarnings.isSensitive(id, in: defaults) }
+
     func isOn(_ app: NativeApp) -> Bool { NativeApps.isOn(app, in: defaults) }
     func set(_ app: NativeApp, on: Bool) { set(on, NativeApps.key(app)) }
     func isOn(_ provider: ContextProviders.Seen) -> Bool { ContextProviders.isOn(provider.id, in: defaults) }
@@ -449,7 +452,7 @@ private struct ContextPane: View {
                     }
                     ForEach(context.providers) { provider in
                         ContextAppRow(bundleID: provider.id, name: provider.name, path: provider.path,
-                                      note: ContextWarnings.isSensitive(provider.id) ? Self.sensitiveNote : nil, isOn: Binding(
+                                      note: context.isSensitive(provider.id) ? Self.sensitiveNote : nil, isOn: Binding(
                             get: { context.isOn(provider) }, set: { context.set(provider, on: $0) }))
                     }
                 }

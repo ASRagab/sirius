@@ -509,7 +509,8 @@ final class ComposerController {
         // Context from an app marked sensitive is warned about first: this
         // send only shows the warning, and the next one goes (D8).
         if let source = contextSource, ambient.snapshot != nil {
-            if !confirming, ContextWarnings.shouldWarn(source.bundleID, in: defaults) {
+            if !confirming, ContextWarnings.shouldWarn(source.bundleID, declared: ambient.snapshot?.tree.sensitive == true,
+                                                       in: defaults) {
                 confirming = true
                 let name = agents.first { $0.id == agent }?.name ?? agent
                 panel.setWarning(app: contextAppName ?? ambient.snapshot?.appName, agent: name, icon: contextIcon)

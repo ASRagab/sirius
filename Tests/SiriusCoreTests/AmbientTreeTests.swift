@@ -348,6 +348,22 @@ final class AmbientTreeTests: XCTestCase {
         )
     }
 
+    // An answer is sensitive only when the app says exactly true (0.2.4,
+    // RFC-0007); anything else is "not said" and never refuses the answer.
+    func testAnAnswerIsSensitiveOnlyWhenTheAppSaysTrue() throws {
+        func tree(_ fields: [String: Any]) throws -> AmbientTree {
+            var all: [String: Any] = ["protocol": "0.2.4", "instance": "run-1", "root": Self.threads]
+            all.merge(fields) { $1 }
+            return try JSONDecoder().decode(AmbientTree.self, from: JSONSerialization.data(withJSONObject: all))
+        }
+        XCTAssertTrue(try tree(["sensitive": true]).sensitive)
+        XCTAssertFalse(try tree([:]).sensitive)
+        XCTAssertFalse(try tree(["sensitive": false]).sensitive)
+        for other in ["yes", 1, ["true"], NSNull()] as [Any] {
+            XCTAssertFalse(try tree(["sensitive": other]).sensitive, "\(other)")
+        }
+    }
+
     // An app's own words for the line are used as they are; a field of the
     // wrong kind leaves Sirius's wording.
     func testTheSummaryQuotesTheAppsOwnDisplay() throws {

@@ -48,6 +48,30 @@ final class AccessibilityContextTests: XCTestCase {
         XCTAssertEqual(Set(NativeApps.all.filter(\.sensitive).map(\.id)).subtracting(ContextWarnings.sensitive), [])
     }
 
+    // An app that marks its own answer sensitive (RFC-0007) is warned
+    // about like one on Sirius's list; an answer that is not marked takes
+    // nothing from the list.
+    func testAnAnswerMarkedSensitiveIsWarnedAbout() throws {
+        let suite = "sirius-warn-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let bank = "com.example.bank"
+        XCTAssertFalse(ContextWarnings.shouldWarn(bank, declared: false, in: defaults))
+        XCTAssertTrue(ContextWarnings.shouldWarn(bank, declared: true, in: defaults))
+        XCTAssertTrue(ContextWarnings.shouldWarn("com.apple.mail", declared: false, in: defaults))
+        // Remembered for Settings, once.
+        XCTAssertFalse(ContextWarnings.isSensitive(bank, in: defaults))
+        ContextWarnings.noteDeclared(bank, in: defaults)
+        ContextWarnings.noteDeclared(bank, in: defaults)
+        XCTAssertEqual(ContextWarnings.declared(in: defaults), [bank])
+        XCTAssertTrue(ContextWarnings.isSensitive(bank, in: defaults))
+        // Don't warn again holds for it, and the switch brings it back.
+        ContextWarnings.dismiss(bank, in: defaults)
+        XCTAssertFalse(ContextWarnings.shouldWarn(bank, declared: true, in: defaults))
+        ContextWarnings.setEnabled(true, in: defaults)
+        XCTAssertTrue(ContextWarnings.shouldWarn(bank, declared: true, in: defaults))
+    }
+
     func testPreviewSaysWhatKindOfFileIsOpen() throws {
         func kind(_ url: String?) throws -> String? {
             try XCTUnwrap(try snapshot(AccessibilityReading(windowTitle: "w", documentURL: url), "com.apple.Preview"))

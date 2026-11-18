@@ -287,20 +287,46 @@ public enum ContextProviders {
 // Settings. The mark is on the app, however its context is read: Mail is
 // read by Sirius, Chrome answers through its helper.
 public enum ContextWarnings {
+    // Apps Sirius warns about whatever they say: Mail, which it reads
+    // itself, and Chrome, whose provider may be older than the mark.
     public static let sensitive: Set<String> = ["com.apple.mail", "com.google.Chrome"]
     // The warning's switch in Settings. Unset is on.
     public static let enabledKey = "context.warn_sensitive"
     static let dismissedPrefix = "context.no_warning."
+    // Apps that have marked an answer sensitive themselves (RFC-0007),
+    // remembered so Settings can say so beside them.
+    static let declaredKey = "context.declared_sensitive"
 
+    public static func declared(in defaults: UserDefaults) -> Set<String> {
+        Set(defaults.stringArray(forKey: declaredKey) ?? [])
+    }
+
+    // An answer from this app was marked sensitive.
+    public static func noteDeclared(_ bundleID: String, in defaults: UserDefaults) {
+        var seen = declared(in: defaults)
+        guard seen.insert(bundleID).inserted else { return }
+        defaults.set(seen.sorted(), forKey: declaredKey)
+    }
+
+    // Sirius's own list only.
     public static func isSensitive(_ bundleID: String) -> Bool { sensitive.contains(bundleID) }
+
+    // Sirius's list, or an app that has said so itself: what Settings shows.
+    public static func isSensitive(_ bundleID: String, in defaults: UserDefaults) -> Bool {
+        isSensitive(bundleID) || declared(in: defaults).contains(bundleID)
+    }
 
     public static func isEnabled(in defaults: UserDefaults) -> Bool {
         defaults.object(forKey: enabledKey) == nil ? true : defaults.bool(forKey: enabledKey)
     }
 
-    // Whether a message with context from this app is warned about first.
-    public static func shouldWarn(_ bundleID: String, in defaults: UserDefaults) -> Bool {
-        isSensitive(bundleID) && isEnabled(in: defaults) && !defaults.bool(forKey: dismissedPrefix + bundleID)
+    // Whether a message with context from this app is warned about first:
+    // the app is on Sirius's list, or the answer in hand is marked
+    // sensitive (`declared`). An answer that is not marked takes nothing
+    // away from the list.
+    public static func shouldWarn(_ bundleID: String, declared: Bool = false, in defaults: UserDefaults) -> Bool {
+        (isSensitive(bundleID) || declared) && isEnabled(in: defaults)
+            && !defaults.bool(forKey: dismissedPrefix + bundleID)
     }
 
     // "Don't warn again", for one app.
@@ -312,6 +338,6 @@ public enum ContextWarnings {
     public static func setEnabled(_ on: Bool, in defaults: UserDefaults) {
         defaults.set(on, forKey: enabledKey)
         guard on else { return }
-        for id in sensitive { defaults.removeObject(forKey: dismissedPrefix + id) }
+        for id in sensitive.union(declared(in: defaults)) { defaults.removeObject(forKey: dismissedPrefix + id) }
     }
 }

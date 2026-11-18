@@ -184,15 +184,23 @@ public struct AmbientTree: Decodable, Equatable, Sendable {
     // word its card (0.2.1, operations 4.3). Optional; a field of the
     // wrong kind is dropped, not refused.
     public var display: AmbientDisplay?
+    // The app says what this answer holds is likely private (0.2.4,
+    // operations 4.4, RFC-0007), so the user is asked before it is sent.
+    // Only the JSON value true counts: false, a missing field and a value
+    // of another kind are all "not said", and never refuse the answer.
+    // Not being said never lowers Sirius's own caution (ContextWarnings).
+    public var sensitive: Bool
 
-    public init(protocol: String, instance: String, root: AmbientElement, display: AmbientDisplay? = nil) {
+    public init(protocol: String, instance: String, root: AmbientElement, display: AmbientDisplay? = nil,
+                sensitive: Bool = false) {
         self.protocol = `protocol`
         self.instance = instance
         self.root = root
         self.display = display
+        self.sensitive = sensitive
     }
 
-    private enum Key: String, CodingKey { case `protocol`, instance, root, display }
+    private enum Key: String, CodingKey { case `protocol`, instance, root, display, sensitive }
 
     public init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: Key.self)
@@ -200,7 +208,8 @@ public struct AmbientTree: Decodable, Equatable, Sendable {
             protocol: try fields.decode(String.self, forKey: .protocol),
             instance: try fields.decode(String.self, forKey: .instance),
             root: try fields.decode(AmbientElement.self, forKey: .root),
-            display: (try? fields.decodeIfPresent(AmbientDisplay.self, forKey: .display)) ?? nil
+            display: (try? fields.decodeIfPresent(AmbientDisplay.self, forKey: .display)) ?? nil,
+            sensitive: ((try? fields.decodeIfPresent(Bool.self, forKey: .sensitive)) ?? nil) == true
         )
     }
 

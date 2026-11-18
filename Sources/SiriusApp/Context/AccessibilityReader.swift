@@ -314,6 +314,7 @@ enum FrontAppContext {
             let running = NSRunningApplication(processIdentifier: pid)
             ContextProviders.note(id: bundleID, name: running?.localizedName ?? answer.appName,
                                   path: running?.bundleURL?.path, in: defaults)
+            if answer.tree.sensitive { ContextWarnings.noteDeclared(bundleID, in: defaults) }
             return answer
         }
         guard let app = NativeApps.app(bundleID), NativeApps.isOn(app, in: defaults), AccessibilityReader.isTrusted

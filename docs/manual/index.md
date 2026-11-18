@@ -106,7 +106,7 @@ release-runbook.md  ·  “Before the release, check…”
 
 Sirius takes only that: the thing that is open and what you selected in it, never the rest of the window, and never a password field. It reads when you open the composer or speak a message, and while the composer is open. No other app is read, and Messages is not on the list. Your agent is told when context was read by Sirius and not given by the app.
 
-**Sensitive apps.** Mail and Chrome often show someone else's words or a private page. The first time you press Return with context from one of them, the message is not sent: the line says what would go, and Return again sends it. Cancel goes back; tick "Don't warn again" to stop the warning for that app. A spoken message gets the same warning: the composer opens with your words in it and the warning showing, and Return sends it. The switch for the warning is in Settings… → Context.
+**Sensitive apps.** Mail and Chrome often show someone else's words or a private page. An app that provides context can also say so itself, and is then treated the same. The first time you press Return with context from one of them, the message is not sent: the line says what would go, and Return again sends it. Cancel goes back; tick "Don't warn again" to stop the warning for that app. A spoken message gets the same warning: the composer opens with your words in it and the warning showing, and Return sends it. The switch for the warning is in Settings… → Context. Sirius does not remove private details from what an app gives it: deciding what to report, and leaving out or masking what should not go, is the app's job.
 
 ## 6. What comes back
 

@@ -127,12 +127,12 @@ final class SiriusDelivery: TranscriptDelivery {
         // marked sensitive opens the composer with the words in it and the
         // warning showing (confirmSpoken). When the composer is already up
         // with a draft, the context is left out, and said to be.
-        if snapshot != nil, ContextWarnings.shouldWarn(bundleID, in: .standard) {
+        if let snapshot, ContextWarnings.shouldWarn(bundleID, declared: snapshot.tree.sensitive, in: .standard) {
             if composer.confirmSpoken(body, to: agent) {
                 SiriusLog.dictation.info("dictation: held in the composer, warning before context from \(bundleID)")
                 return (nil, true)
             }
-            let app = front.localizedName ?? snapshot?.appName ?? "that app"
+            let app = front.localizedName ?? snapshot.appName ?? "that app"
             // TODO(copy): copy
             notice(agent, "Left out what you had selected in \(app). Send it from the composer, or stop this warning in Settings.")
             SiriusLog.dictation.info("dictation: context from \(bundleID) left out, sensitive")
