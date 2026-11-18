@@ -39,9 +39,6 @@ final class ComposerController {
     private var agents: [ComposerAgent] = []
     private var attachments: [URL] = []
     private var sending = false
-    // Opens an aside with the agent on this text and these files; false
-    // when it could not.
-    var onAside: ((_ agent: String, _ text: String, _ attachments: [URL], _ context: AmbientSnapshot?) -> Bool)?
     // What the app in front had open and selected when the composer
     // opened. The send reads that app again and sends the fresh answer,
     // or this copy when the reread fails (AmbientSendRead). The composer
@@ -112,7 +109,6 @@ final class ComposerController {
         selection = AgentSelection(chosen: defaults.string(forKey: Self.lastAgentKey))
         shortcut = Shortcuts.compose(in: defaults)
         panel.onSend = { [weak self] in self?.send() }
-        panel.onSendAside = { [weak self] in self?.sendAside() }
         panel.onNextAgent = { [weak self] in self?.nextAgent() }
         panel.onCancel = { [weak self] in self?.close() }
         panel.onAttach = { [weak self] urls in self?.attach(urls) }
@@ -351,9 +347,7 @@ final class ComposerController {
         if before.0 != agents || before.1 != current { refreshAgent() }
     }
 
-    // `restore` false leaves focus where it is: an aside's window has just
-    // taken it.
-    func close(restore: Bool = true, then gone: @escaping () -> Void = {}) {
+    func close(then gone: @escaping () -> Void = {}) {
         let previous = previous
         self.previous = nil
         stopWatch()
@@ -365,7 +359,7 @@ final class ComposerController {
         }
         panel.dismiss {
             // Only if Sirius still has focus; the user may have clicked elsewhere.
-            if restore, NSApp.isActive { previous?.activate() }
+            if NSApp.isActive { previous?.activate() }
             gone()
         }
     }
@@ -439,28 +433,6 @@ final class ComposerController {
                 SiriusLog.composer.error("send to \(agent) failed: \(error)")
                 NSSound.beep()
             }
-        }
-    }
-
-    // ⌘Return: what is typed opens an aside with the selected agent in
-    // place of a message to it. Without an opener (no host), or when the
-    // aside cannot open, it beeps and the text stays.
-    private func sendAside() {
-        let text = panel.textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sending, !text.isEmpty || !attachments.isEmpty else { return }
-        guard let agent = current, let onAside else { return NSSound.beep() }
-        sending = true
-        stopWatch()
-        let files = attachments
-        let held = ambient.snapshot
-        if held == nil { ambient.clear() }
-        let reread = rereadContext()
-        Task {
-            defer { sending = false }
-            let context = await sendContext(held: held, reread: reread)
-            guard onAside(agent, text, files, context) else { return NSSound.beep() }
-            sent = true
-            close(restore: false) { [weak self] in self?.clearSent() }
         }
     }
 

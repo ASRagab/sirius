@@ -39,8 +39,6 @@ struct Display: ParsableCommand {
             sirius display toast "Pushed the branch"
             sirius display toast --alert -- -1 test failed
             sirius display toast --replace "Pushed; CI is green"
-            sirius display aside "Compare the two retry designs and recommend one"
-            sirius display aside --anchor k3f9x2m7qa "Explain why this paragraph reads as passive"
             echo '[{"type":"text","text":"done"}]' | sirius display toast --json
             """
     )

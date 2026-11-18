@@ -25,7 +25,6 @@ MainActor.assumeIsolated {
     OnboardingSnapshots.runIfRequested()
     SettingsSnapshots.runIfRequested()
     ComposerSnapshots.runIfRequested()
-    AsideSnapshots.runIfRequested()
     LaunchSnapshots.runIfRequested()
     DictationSnapshots.runIfRequested()
     ToastSnapshots.runIfRequested()
@@ -136,30 +135,6 @@ MainActor.assumeIsolated {
     composer.registerShortcut()
     DevDemo.closeComposer = { composer.close() }
 
-    // Asides: ⌘Return in the composer opens one on what was typed, and an
-    // agent opens one with `display aside` (AsideController).
-    let asides = AsideController(host: host, anchors: anchors)
-    composer.onAside = { agent, text, attachments, context in
-        Task { @MainActor in
-            do {
-                try await asides.openAside(agent: agent, .user(text: text, attachments: attachments, context: context))
-            } catch {
-                _ = toasts.enqueue(agent: agent, text: "Couldn't open an aside", alert: true) // TODO(copy): copy
-            }
-        }
-        return true
-    }
-    queue.openAside = { agent, brief, anchor in
-        do {
-            try await asides.openAside(agent: agent, .agent(brief: brief, anchor: anchor))
-            return .success(.delivered)
-        } catch AsideController.Failure.tooMany {
-            return .failure(RPCError(.queueFull, "Too many asides open", data: ErrorData(method: .display)))
-        } catch {
-            return .failure(RPCError(.notReady, "No agent to open an aside with", data: ErrorData(method: .display)))
-        }
-    }
-
     // Hold fn anywhere to dictate (dictation.md): a command for an agent, or
     // into the composer while it is open. Hold ⌃fn to paste at the cursor
     // instead.
@@ -217,5 +192,5 @@ MainActor.assumeIsolated {
                                openComposer: { composer.open() }, composeShortcut: { composer.shortcut })
     app.delegate = delegate
     app.run()
-    withExtendedLifetime((termination, sigterm, composer, dictation, onboarding, settings, launchCue, asides)) {}
+    withExtendedLifetime((termination, sigterm, composer, dictation, onboarding, settings, launchCue)) {}
 }

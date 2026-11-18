@@ -7,9 +7,6 @@ final class AppCommandQueue: CommandQueue {
     private let toasts: ToastPresenter
     private let notifications: NotificationPresenter
     private let speech: SpeechPresenter
-    // Set once the agent host exists (main.swift): opens an aside for the
-    // agent on its brief.
-    @MainActor var openAside: (@MainActor (_ agent: String, _ brief: String, _ anchor: String?) async -> Result<MethodResult, RPCError>)?
 
     init(toasts: ToastPresenter, notifications: NotificationPresenter, speech: SpeechPresenter) {
         self.toasts = toasts
@@ -34,13 +31,10 @@ final class AppCommandQueue: CommandQueue {
                     ? .success(.delivered)
                     : .failure(RPCError(.queueFull, "Queue full", data: ErrorData(method: .display)))
             case .aside:
-                // The agent's brief opens a window on a fork of its session
-                // (AsideController); the receipt goes back once the window
-                // is up, before the fork has said anything.
-                guard let openAside = await MainActor.run(body: { self.openAside }) else {
-                    return .failure(RPCError(.notReady, "Asides are not ready", data: ErrorData(method: .display)))
-                }
-                return await openAside(command.agent, ContentBlock.joinedText(params.content), params.anchor)
+                // Asides were removed; an agent whose instructions still
+                // name the kind is told what to do instead.
+                return .failure(RPCError(.unknownDisplayKind, DisplayKind.asideRemoved,
+                                         data: ErrorData(method: .display, kind: params.kind.rawValue)))
             case .dialog:
                 // Validation rejects this with KIND_NOT_AVAILABLE before it gets here.
                 return .failure(RPCError(.kindNotAvailable, "Kind not available",

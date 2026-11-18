@@ -10,7 +10,6 @@ import SwiftUI
 @MainActor
 final class ComposerPanel: NSPanel {
     var onSend: (() -> Void)?
-    var onSendAside: (() -> Void)?
     var onNextAgent: (() -> Void)?
     var onCancel: (() -> Void)?
     var onAttach: (([URL]) -> Void)?
@@ -150,7 +149,6 @@ final class ComposerPanel: NSPanel {
         textView.isEditable = true
         textView.selectedTextAttributes = [.backgroundColor: Palette.selection]
         textView.onSend = { [weak self] in self?.onSend?() }
-        textView.onSendAside = { [weak self] in self?.onSendAside?() }
         textView.onNextAgent = { [weak self] in self?.onNextAgent?() }
         textView.onCancel = { [weak self] in self?.onCancel?() }
         textView.onPasteFiles = { [weak self] urls in self?.onAttach?(urls) }
@@ -619,16 +617,12 @@ final class ComposerScrollView: NSScrollView {
     }
 }
 
-// Return sends and Shift-Return adds a line, as in chat apps; ⌘Return
-// sends the message as an aside, a window beside the work. ⌘/ or Shift-Tab (as in Claude Code) switches to the next agent;
-// Escape closes. A paste of
+// Return or ⌘Return sends and Shift-Return adds a line, as in chat apps; ⌘/ or Shift-Tab (as in Claude Code) switches to the next agent; Escape closes. A paste of
 // files or an image attaches them instead of inserting text. ⌫ or ⌘⌫ with
 // the caret at the start, nothing selected, removes the last attachment, as
 // in chat apps; with text before the caret they keep their usual meaning.
 final class ComposerTextView: NSTextView {
     var onSend: (() -> Void)?
-    // ⌘Return: the message opens an aside with the agent (AsideController).
-    var onSendAside: (() -> Void)?
     var onNextAgent: (() -> Void)?
     var onCancel: (() -> Void)?
     var onPasteFiles: (([URL]) -> Void)?
@@ -683,10 +677,8 @@ final class ComposerTextView: NSTextView {
         ComposerSignposts.firstKey()
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         switch (event.keyCode, flags) {
-        case (36, []), (76, []):
+        case (36, []), (76, []), (36, [.command]), (76, [.command]):
             onSend?()
-        case (36, [.command]), (76, [.command]):
-            onSendAside?()
         case (44, [.command]), (48, [.shift]):
             onNextAgent?()
         default:

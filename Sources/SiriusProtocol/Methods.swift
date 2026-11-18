@@ -10,6 +10,10 @@ public enum DisplayKind: String, CaseIterable, Sendable, Codable {
         case .dialog: nil
         }
     }
+
+    // What an agent that still asks for an aside is told: the kind was
+    // removed, and an instruction file written before then may still name it.
+    public static let asideRemoved = "display aside was removed; answer with a toast, or write a file and say where it is" // TODO(copy): copy
 }
 
 public let notifyAccepts: Set<ContentBlock.BlockType> = [.text]
