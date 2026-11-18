@@ -87,7 +87,7 @@ public enum WorkingMemory {
     public static func prompt(memory: URL, tokens: Int, limit: Int, cleanup: String) -> String {
         let path = (memory.path as NSString).abbreviatingWithTildeInPath
         return "Working memory (\(path)) is at about \(tokens) tokens, over your limit of \(limit) "
-            + "(\(limitName) in consts.md). Clean it up now with `wmem`, as below.\n\n"
+            + "(\(limitName) in consts.md). Clean it up now by editing the file, as below.\n\n"
             + cleanup.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

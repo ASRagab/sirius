@@ -31,7 +31,7 @@ The user may have other Claude or Codex sessions open on this Mac. When they ask
 
 ## Working memory
 
-Your working memory, pointers to what the user refers to, is @~/.agents/WMEM.md below. Keep it with the `wmem` command as `~/.agents/gc.md` says.
+Your working memory, pointers to what the user refers to, is @~/.agents/WMEM.md below; read it at the start of each session. When you resolve a reference by searching or asking ("the report from yesterday", "the inference session"), add a one-line pointer to it under Learned: a short name and where the thing is. Keep entries short; they point to things and never hold the work itself. Only the user pins entries. Edit the file directly; there is no tool for it. When asked to clean it up, follow `~/.agents/gc.md`.
 
 {{manual}}
 
