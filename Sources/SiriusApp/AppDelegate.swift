@@ -66,12 +66,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let setup = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
         setup.target = self
         menu.addItem(setup)
-        // Below Settings…, as in Parrot's menu.
         let updates = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
         updates.target = self
         updates.isHidden = !Updater.isRunning
-        menu.addItem(updates)
+        // In the bottom group, with the manual and Quit.
         menu.addItem(.separator())
+        menu.addItem(updates)
         // The manual's PDF, just above Quit, so it can be read when no agent
         // answers. Absent from a bare `swift build`, which has no bundle to
         // hold it.
