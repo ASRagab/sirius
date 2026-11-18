@@ -69,16 +69,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let updates = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
         updates.target = self
         updates.isHidden = !Updater.isRunning
-        // In the bottom group, with the manual and Quit.
         menu.addItem(.separator())
-        menu.addItem(updates)
-        // The manual's PDF, just above Quit, so it can be read when no agent
+        // The manual's PDF, first in the bottom group, so it can be read when no agent
         // answers. Absent from a bare `swift build`, which has no bundle to
         // hold it.
         let manual = NSMenuItem(title: "Open manual \u{2197}\u{FE0E}", action: #selector(showManual(_:)), keyEquivalent: "")
         manual.target = self
         manual.isHidden = !FileManager.default.fileExists(atPath: Self.manualURL.path)
         menu.addItem(manual)
+        // In the bottom group, between the manual and Quit.
+        menu.addItem(updates)
         // Its own selector: macOS 26 gives items whose action is
         // `terminate(_:)` an xmark icon.
         let quit = NSMenuItem(title: "Quit Sirius", action: #selector(quit(_:)), keyEquivalent: "q")
