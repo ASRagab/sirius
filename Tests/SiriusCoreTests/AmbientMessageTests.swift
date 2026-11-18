@@ -108,7 +108,6 @@ final class AmbientMessageTests: XCTestCase {
         let message = Message(id: "m_1", agent: "claude", text: "hello")
         XCTAssertEqual(MessageRenderer.render(message),
                        "<sirius message=\"m_1\" agent=\"claude\">\nhello\n</sirius message=\"m_1\">\n" + MessageRenderer.replyNote)
-        XCTAssertEqual(MessageRenderer.renderAside(message), "hello")
     }
 
     // Selected text is another app's content. It cannot close its own
@@ -133,14 +132,6 @@ final class AmbientMessageTests: XCTestCase {
         context.items[0].title = #"a "quoted" <name>"#
         let rendered = MessageRenderer.render(Message(id: "m_1", agent: "claude", text: "x", context: context))
         XCTAssertTrue(rendered.contains(#"title="a &quot;quoted&quot; &lt;name&gt;""#))
-    }
-
-    func testAnAsideTurnCarriesTheContextToo() {
-        let message = Message(id: "m_2", agent: "claude", text: "explain this", context: stored())
-        let rendered = MessageRenderer.renderAside(message)
-        XCTAssertTrue(rendered.hasPrefix("explain this\n\n<context app=\"Paper\""))
-        XCTAssertTrue(rendered.hasSuffix(#"</context message="m_2">"#))
-        XCTAssertFalse(rendered.contains(MessageRenderer.replyNote))
     }
 
     // MARK: Anchors

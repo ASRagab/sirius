@@ -16,16 +16,6 @@ import SiriusProtocol
 //
 // Declares steer, agentTurns and usage. Not compact: session/compact on
 // 1.4.14 acks, then fails without a word (§3.3 item 8).
-//
-// An aside (AsideOptions) is a second host on a fork of the agent's
-// session: session/fork gives it the history under a new id and leaves the
-// agent's own alone, mid-turn included; its answer streams as item/delta
-// (checked on 1.4.14, there within one host). A fork comes back asking for
-// approvals, so it is set to allowAll like the session it came from. The
-// aside's instructions are the host's developer prompt and also lead its
-// first turn, since the fork's history holds the agent's own. It has no
-// sirius MCP server. Not session/sideChat, which is read-only: an aside
-// keeps the agent's tools.
 public actor MuseAdapter: Adapter {
     public nonisolated let registration: AgentRegistration
     public nonisolated let socketPath: String
@@ -36,9 +26,6 @@ public actor MuseAdapter: Adapter {
     public nonisolated let updates: AsyncStream<SessionUpdate>
     private let updateSink: AsyncStream<SessionUpdate>.Continuation
     private let environment: [String: String]
-    private let aside: AsideOptions?
-    // Whether the aside's instructions have gone with a turn of this session.
-    private var briefed = false
 
     private var server: MuseServe?
     private var session: String?
@@ -59,13 +46,11 @@ public actor MuseAdapter: Adapter {
 
     public init(registration: AgentRegistration, socketPath: String, helpersDirectory: URL,
                 instructions: String? = nil,
-                environment: [String: String] = ProcessInfo.processInfo.environment,
-                aside: AsideOptions? = nil) {
-        self.aside = aside
+                environment: [String: String] = ProcessInfo.processInfo.environment) {
         self.registration = registration
         self.socketPath = socketPath
         self.helpersDirectory = helpersDirectory
-        self.instructions = aside?.instructions ?? instructions
+        self.instructions = instructions
         self.environment = environment
         (updates, updateSink) = makeUpdateStream()
     }
@@ -91,14 +76,11 @@ public actor MuseAdapter: Adapter {
         let server = MuseServe(
             executable: URL(fileURLWithPath: executable),
             arguments: launchArguments,
-            environment: MuseLaunch.environment(environment, socketPath: socketPath, helpers: helpersDirectory,
-                                                aside: aside != nil),
+            environment: MuseLaunch.environment(environment, socketPath: socketPath, helpers: helpersDirectory),
             directory: URL(fileURLWithPath: registration.root, isDirectory: true))
         if let observer { server.observe(observer) }
-        if let aside { server.stream(to: aside.onEvent) }
         try server.launch()
         self.server = server
-        briefed = false
 
         do {
             let initialized = try await server.request("initialize", .object([
@@ -110,7 +92,7 @@ public actor MuseAdapter: Adapter {
             try server.notify("initialized")
             try check(initialized)
             try await checkModel(on: server)
-            let opened = try await openSession(on: server, resuming: request.resume, fork: request.fork)
+            let opened = try await openSession(on: server, resuming: request.resume)
             session = opened.id
             model = opened.model ?? registration.model
             follow(server, session: opened.id)
@@ -134,15 +116,10 @@ public actor MuseAdapter: Adapter {
         guard let server, let session else { throw MuseAdapterError.notStarted }
         let command = MuseCommand.id()
         ownCommands.insert(command)
-        var lead: String?
-        if let aside, !briefed {
-            lead = aside.instructions
-            briefed = true
-        }
         var params: [String: JSONValue] = [
             "commandId": .string(command),
             "sessionId": .string(session),
-            "input": .array(Self.input(for: message, aside: aside != nil, lead: lead)),
+            "input": .array(Self.input(for: message)),
         ]
         if let effort = registration.effort { params["reasoningEffort"] = .string(effort) }
         let started = try await server.request("turn/start", .object(params))
@@ -165,7 +142,7 @@ public actor MuseAdapter: Adapter {
                 "commandId": .string(MuseCommand.id()),
                 "sessionId": .string(session),
                 "expectedTurnId": .string(activeTurn),
-                "input": .array(Self.input(for: message, aside: aside != nil)),
+                "input": .array(Self.input(for: message)),
             ]))
             return .joined
         } catch {
@@ -219,30 +196,12 @@ public actor MuseAdapter: Adapter {
     }
 
     private func sessionConfig() -> JSONValue {
-        if aside != nil { return .object([:]) }
         let mcpHelper = helpersDirectory.appendingPathComponent("sirius-mcp").path
         return .object(["mcpServers": MuseLaunch.mcpServers(mcpHelper: mcpHelper, socketPath: socketPath)])
     }
 
-    private func openSession(on server: MuseServe, resuming session: String?,
-                             fork: Bool = false) async throws -> OpenedSession {
-        if let session, fork {
-            do {
-                let forked = try opened(try await server.request("session/fork", .object([
-                    "commandId": .string(MuseCommand.id()),
-                    "sessionId": .string(session),
-                    "excludeItems": .bool(true),
-                ])))
-                _ = try? await server.request("session/setApprovalMode", .object([
-                    "commandId": .string(MuseCommand.id()),
-                    "sessionId": .string(forked.id),
-                    "mode": .string("allowAll"),
-                ]))
-                return forked
-            } catch MuseServeError.rpc {
-                // Nothing to fork from: the aside starts empty.
-            }
-        } else if let session {
+    private func openSession(on server: MuseServe, resuming session: String?) async throws -> OpenedSession {
+        if let session {
             do {
                 let resumed = try await server.request("session/resume", .object([
                     "commandId": .string(MuseCommand.id()),
@@ -333,11 +292,8 @@ public actor MuseAdapter: Adapter {
 
     // The rendered wrapper, then each image beside it as a native image
     // the model can see. The wrapper still names its path.
-    // In an aside the text is the user's words alone, after `lead` (the
-    // aside's instructions) on its first turn.
-    static func input(for message: Message, aside: Bool = false, lead: String? = nil) -> [JSONValue] {
-        var text = aside ? MessageRenderer.renderAside(message) : MessageRenderer.render(message)
-        if let lead { text = lead + "\n\n---\n\n" + text }
+    static func input(for message: Message) -> [JSONValue] {
+        let text = MessageRenderer.render(message)
         var items: [JSONValue] = [.object([
             "type": .string("text"),
             "text": .string(text),

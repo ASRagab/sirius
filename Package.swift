@@ -66,9 +66,7 @@ let package = Package(
         .testTarget(name: "SiriusClientTests", dependencies: ["SiriusClient"]),
         .testTarget(name: "SiriusCoreTests", dependencies: ["SiriusCore"]),
         .testTarget(name: "SiriusMemoryTests", dependencies: ["SiriusMemory"]),
-        // Fixtures: harness streams as recorded.
-        .testTarget(name: "SiriusAdaptersTests", dependencies: ["SiriusAdapters", "SiriusClient"],
-                    resources: [.copy("Fixtures")]),
+        .testTarget(name: "SiriusAdaptersTests", dependencies: ["SiriusAdapters", "SiriusClient"]),
         // The app's own logic that needs AppKit: the shortcut recording,
         // the menu. Nothing here registers a real hot key.
         .testTarget(name: "SiriusAppTests", dependencies: ["SiriusApp", "SiriusCore", "SiriusProtocol"]),

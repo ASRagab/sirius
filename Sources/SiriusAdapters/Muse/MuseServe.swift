@@ -38,12 +38,6 @@ final class MuseServe: @unchecked Sendable {
     private var finishedTurns: [String: JSONValue] = [:]
     // Set once, from the transport: why the connection is gone.
     private var failure: Error?
-    // An aside's: what the agent says (TurnEvent), called on the reader's
-    // thread in the order read, so all of a turn's events have gone before
-    // its turn/completed resumes the wait. Set before launch().
-    private var onEvent: (@Sendable (TurnEvent) -> Void)?
-    // What the followed session's turn has said so far.
-    private var said = MuseEvents()
 
     init(executable: URL, arguments: [String], environment: [String: String], directory: URL) {
         transport = JSONRPCStdio(name: "muse serve", executable: executable, arguments: arguments,
@@ -60,10 +54,6 @@ final class MuseServe: @unchecked Sendable {
     var processIdentifier: Int32 { transport.processIdentifier }
 
     func observe(_ observer: @escaping @Sendable (String) -> Void) { transport.observe(observer) }
-
-    func stream(to onEvent: @escaping @Sendable (TurnEvent) -> Void) {
-        lock.withLock { self.onEvent = onEvent }
-    }
 
     func launch() throws { try transport.launch() }
 
@@ -105,20 +95,9 @@ final class MuseServe: @unchecked Sendable {
 
     // MARK: - Muse's own
 
-    // An aside's: the events a notification about the followed session
-    // makes, and at the turn's end those that end what it left open.
-    private func hand(on method: String, _ params: JSONValue) {
-        let (sink, events): ((@Sendable (TurnEvent) -> Void)?, [TurnEvent]) = lock.withLock {
-            guard let onEvent else { return (nil, []) }
-            return (onEvent, method == "turn/completed" ? said.end() : said.hear(method, params))
-        }
-        events.forEach { sink?($0) }
-    }
-
     private func didNotify(_ method: String, _ params: JSONValue) {
         let (session, events) = lock.withLock { (self.session, self.events) }
         guard let session, params["sessionId"]?.string == session else { return }
-        hand(on: method, params)
         switch method {
         case "turn/started":
             guard let turnId = params["turnId"]?.string else { return }
@@ -182,8 +161,6 @@ final class MuseServe: @unchecked Sendable {
     }
 
     private func fail(_ error: Error) {
-        // The turn running ends here, with whatever it left open.
-        hand(on: "turn/completed", .object([:]))
         let turns = lock.withLock { () -> [CheckedContinuation<JSONValue, Error>] in
             if failure == nil { failure = error }
             defer { turnWaiters.removeAll() }

@@ -28,112 +28,12 @@ enum ClaudeStream {
         case other
     }
 
-    // What an aside hands on of a turn (ClaudeEvents), from the main
-    // thread's lines only: a subagent's (parent_tool_use_id set) are left
-    // out. The blocks stream with --include-partial-messages; `index` is
-    // the block's place in its message.
-    enum Part: Equatable {
-        enum Block: Equatable {
-            case text
-            case thinking
-            case tool(id: String, name: String)
-        }
-
-        // A model call began (message_start) and ended (message_stop).
-        case messageStarted(id: String?)
-        case messageStopped
-        case blockStarted(index: Int, Block)
-        case text(index: Int, String)
-        case thinking(index: Int, String)
-        // A piece of a tool call's input, as partial JSON.
-        case toolInput(index: Int, String)
-        case blockStopped(index: Int)
-        // The complete tool_use block: the input is whole, so the call has
-        // a title, and Claude runs it next.
-        case toolUse(id: String, name: String, title: String)
-        case toolResult(id: String, failed: Bool, output: String?)
-        // system/api_retry: the request failed and Claude is trying again.
-        case retry(attempt: Int?, limit: Int?, error: String?)
-    }
-
     static func decode(_ line: Data) -> [String: Any]? {
         try? JSONSerialization.jsonObject(with: line) as? [String: Any]
     }
 
     static func parse(_ line: Data) -> Event? {
         decode(line).flatMap { parse($0) }
-    }
-
-    static func parts(_ object: [String: Any]) -> [Part] {
-        guard object["parent_tool_use_id"] as? String == nil else { return [] }
-        switch object["type"] as? String {
-        case "stream_event":
-            guard let event = object["event"] as? [String: Any] else { return [] }
-            let index = event["index"] as? Int ?? 0
-            switch event["type"] as? String {
-            case "message_start":
-                return [.messageStarted(id: (event["message"] as? [String: Any])?["id"] as? String)]
-            case "message_stop":
-                return [.messageStopped]
-            case "content_block_start":
-                guard let block = event["content_block"] as? [String: Any] else { return [] }
-                switch block["type"] as? String {
-                case "text":
-                    return [.blockStarted(index: index, .text)]
-                case "thinking", "redacted_thinking":
-                    return [.blockStarted(index: index, .thinking)]
-                case "tool_use", "server_tool_use", "mcp_tool_use":
-                    guard let id = block["id"] as? String else { return [] }
-                    return [.blockStarted(index: index, .tool(id: id, name: block["name"] as? String ?? ""))]
-                default:
-                    return []
-                }
-            case "content_block_delta":
-                guard let delta = event["delta"] as? [String: Any] else { return [] }
-                switch delta["type"] as? String {
-                case "text_delta":
-                    guard let text = delta["text"] as? String, !text.isEmpty else { return [] }
-                    return [.text(index: index, text)]
-                case "thinking_delta":
-                    guard let text = delta["thinking"] as? String, !text.isEmpty else { return [] }
-                    return [.thinking(index: index, text)]
-                case "input_json_delta":
-                    guard let json = delta["partial_json"] as? String, !json.isEmpty else { return [] }
-                    return [.toolInput(index: index, json)]
-                default:
-                    return []
-                }
-            case "content_block_stop":
-                return [.blockStopped(index: index)]
-            default:
-                return []
-            }
-        case "assistant":
-            return content(of: object).compactMap { block in
-                guard block["type"] as? String == "tool_use", let id = block["id"] as? String else { return nil }
-                let name = block["name"] as? String ?? ""
-                return .toolUse(id: id, name: name, title: ToolLine.title(tool: name, input: block["input"] as? [String: Any] ?? [:]))
-            }
-        case "user" where object["isReplay"] as? Bool != true:
-            return content(of: object).compactMap { block in
-                guard block["type"] as? String == "tool_result", let id = block["tool_use_id"] as? String else { return nil }
-                var output = block["content"] as? String
-                if output == nil, let pieces = block["content"] as? [[String: Any]] {
-                    let text = pieces.compactMap { $0["text"] as? String }
-                    if !text.isEmpty { output = text.joined(separator: "\n") }
-                }
-                return .toolResult(id: id, failed: block["is_error"] as? Bool ?? false, output: output)
-            }
-        case "system" where object["subtype"] as? String == "api_retry":
-            return [.retry(attempt: object["attempt"] as? Int, limit: object["max_retries"] as? Int,
-                           error: object["error"] as? String)]
-        default:
-            return []
-        }
-    }
-
-    private static func content(of object: [String: Any]) -> [[String: Any]] {
-        (object["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
     }
 
     static func parse(_ object: [String: Any]) -> Event? {
@@ -189,15 +89,12 @@ enum ClaudeStream {
 
     // One user turn: native image blocks for the image attachments that fit,
     // then the rendered wrapper, which names every attachment by path.
-    // In an aside the text is the user's words alone (renderAside).
-    static func userMessage(_ message: Message, uuid: String = UUID().uuidString.lowercased(),
-                            aside: Bool = false) throws -> Data {
+    static func userMessage(_ message: Message, uuid: String = UUID().uuidString.lowercased()) throws -> Data {
         var content: [[String: Any]] = []
         for attachment in message.attachments {
             if let block = imageBlock(attachment) { content.append(block) }
         }
-        content.append(["type": "text",
-                        "text": aside ? MessageRenderer.renderAside(message) : MessageRenderer.render(message)])
+        content.append(["type": "text", "text": MessageRenderer.render(message)])
         let line: [String: Any] = [
             "type": "user",
             "uuid": uuid,

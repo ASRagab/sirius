@@ -68,21 +68,16 @@ enum CodexLaunch {
     // (CodexCapabilities): the agent then does its work itself.
     static let delegationHint = "Start and use worker agents as your developer instructions describe."
 
-    // `aside` leaves out the sirius MCP server: an aside's own words are
-    // its reply, and it has no other way to the user.
     static func arguments(mcpHelper: String, socketPath: String, fast: Bool = false,
-                          workers: String? = nil, aside: Bool = false,
+                          workers: String? = nil,
                           capabilities: CodexCapabilities = .unknown) -> [String] {
-        var config: [String] = []
-        if !aside {
-            config += [
-                "mcp_servers.sirius.command=\(toml(mcpHelper))",
-                "mcp_servers.sirius.args=[]",
-                "mcp_servers.sirius.env={\(SiriusEnvironment.socket)=\(toml(socketPath))}",
-            ]
-            for tool in tools {
-                config.append("mcp_servers.sirius.tools.\(tool).approval_mode=\"approve\"")
-            }
+        var config = [
+            "mcp_servers.sirius.command=\(toml(mcpHelper))",
+            "mcp_servers.sirius.args=[]",
+            "mcp_servers.sirius.env={\(SiriusEnvironment.socket)=\(toml(socketPath))}",
+        ]
+        for tool in tools {
+            config.append("mcp_servers.sirius.tools.\(tool).approval_mode=\"approve\"")
         }
         config.append("sandbox_workspace_write.network_access=true")
         config.append("approvals_reviewer=\"auto_review\"")

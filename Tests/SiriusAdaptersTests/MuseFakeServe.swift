@@ -10,11 +10,7 @@ import Foundation
 // FAKE_DONE, FAKE_APPROVAL sends approval/request and ends once
 // approval/decide comes, FAKE_INPUT sends userInput/request and ends once
 // userInput/cancel comes, FAKE_AGENT starts a turn of the agent's own after
-// ours, FAKE_SPEAK streams its answer as item/delta: "Hel", "lo" on one
-// agentMessage item and "world" on a second, beside a reasoning item's
-// delta, a non-text field's and another session's, none of which are the
-// answer. A session/resume or session/fork of "missing" is refused;
-// session/fork answers "fork-of-<sessionId>".
+// ours. A session/resume of "missing" is refused.
 //
 // fake-muse.init beside the script changes initialize: "exit" writes to
 // stderr and exits 1, "error" answers with a JSON-RPC error, "old" reports
@@ -92,13 +88,6 @@ enum MuseFakeServe {
                 sid = params["sessionId"]
                 send({"id": mid, "result": {"session": {"sessionId": sid, "modelId": "muse-wonder-1.0"},
                                             "history": {}, "pendingRequests": [], "viewCursor": "v"}})
-        elif method == "session/fork":
-            if params.get("sessionId") == "missing":
-                send({"id": mid, "error": {"code": -32004, "message": "session not found"}})
-            else:
-                sid = "fork-of-" + params["sessionId"]
-                send({"id": mid, "result": {"session": {"sessionId": sid, "modelId": "muse-wonder-1.0"},
-                                            "viewCursor": "v"}})
         elif method == "session/setApprovalMode":
             send({"id": mid, "result": {"commandId": params.get("commandId"), "status": "accepted"}})
         elif method == "turn/start":
@@ -131,22 +120,6 @@ enum MuseFakeServe {
                 send({"id": 901, "method": "userInput/request", "params": {
                     "sessionId": sid, "turnId": tid, "userInputId": "ui-1", "questions": []}})
                 continue
-            if "FAKE_SPEAK" in text:
-                def item(iid, kind):
-                    send({"method": "item/started", "params": {"sessionId": sid, "turnId": tid, "item": {"itemId": iid, "kind": kind}}})
-                def delta(iid, d, field=None, session=None):
-                    p = {"sessionId": session or sid, "turnId": tid, "itemId": iid, "delta": d}
-                    if field: p["field"] = field
-                    send({"method": "item/delta", "params": p})
-                item(tid + "-r", "reasoning")
-                delta(tid + "-r", "hmm")
-                item(tid + "-a", "agentMessage")
-                delta(tid + "-a", "Hel", "text")
-                delta(tid + "-a", "summary", "summary")
-                delta(tid + "-a", "lo")
-                delta(tid + "-a", "elsewhere", session="child-1")
-                item(tid + "-b", "agentMessage")
-                delta(tid + "-b", "world")
             if "FAKE_FAIL" in text:
                 completed(tid, "failed", "boom")
             else:

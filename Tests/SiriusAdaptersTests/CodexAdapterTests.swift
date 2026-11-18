@@ -281,108 +281,6 @@ final class CodexAdapterTests: XCTestCase {
         }
     }
 
-    // MARK: Asides
-
-    static let asideInstructions = "Answer here, in your own words."
-
-    private func asideAdapter(_ text: AsideText) throws -> CodexAdapter {
-        let registration = AgentRegistration(agent: "cx", name: "Codex", harness: .codex,
-                                             executable: try CodexFakeAppServer.install(in: root), root: root.path)
-        return CodexAdapter(registration: registration, socketPath: "/tmp/sirius-test/cx.sock",
-                            helpersDirectory: URL(fileURLWithPath: "/opt/sirius/Helpers"),
-                            instructions: Self.instructions,
-                            aside: AsideOptions(instructions: Self.asideInstructions, onEvent: { text.append($0) }))
-    }
-
-    func testAForkedAsideOpensItsOwnThread() async throws {
-        adapter = try asideAdapter(AsideText())
-        let info = try await adapter.open(SessionRequest(resume: "thread-old", fork: true))
-        XCTAssertEqual(info.session, "fork-of-thread-old", "the fork's id, not the parent's")
-        XCTAssertEqual(methods(), ["initialize", "initialized", "thread/fork"])
-        let fork = try XCTUnwrap(request("thread/fork"))
-        XCTAssertEqual(fork["threadId"] as? String, "thread-old")
-        XCTAssertEqual(fork["excludeTurns"] as? Bool, true)
-        XCTAssertNil(fork["ephemeral"])
-        XCTAssertEqual(fork["developerInstructions"] as? String, Self.asideInstructions)
-        let end = try await adapter.prompt(Message(id: "m_1", agent: "cx", text: "hi"))
-        XCTAssertEqual(end.session, "fork-of-thread-old")
-        XCTAssertEqual(request("turn/start")?["threadId"] as? String, "fork-of-thread-old")
-    }
-
-    func testARefusedForkFallsBackToAnEphemeralOneThenANewThread() async throws {
-        adapter = try asideAdapter(AsideText())
-        let ephemeral = try await adapter.open(SessionRequest(resume: "nofork", fork: true))
-        XCTAssertEqual(ephemeral.session, "ephemeral-fork")
-        let forks = CodexFakeAppServer.received(in: root)
-            .filter { $0["method"] as? String == "thread/fork" }.compactMap { $0["params"] as? [String: Any] }
-        XCTAssertEqual(forks.count, 2)
-        XCTAssertNil(forks[0]["ephemeral"])
-        XCTAssertEqual(forks[1]["ephemeral"] as? Bool, true)
-        XCTAssertEqual(forks[1]["threadId"] as? String, "nofork")
-        XCTAssertEqual(forks[1]["excludeTurns"] as? Bool, true)
-
-        try FileManager.default.removeItem(at: root.appendingPathComponent("fake-codex.log"))
-        let fresh = try await adapter.open(SessionRequest(resume: "missing", fork: true))
-        XCTAssertEqual(fresh.session, "thread-new")
-        XCTAssertEqual(methods(), ["initialize", "initialized", "thread/fork", "thread/fork", "thread/start"])
-        XCTAssertEqual(request("thread/start")?["developerInstructions"] as? String, Self.asideInstructions)
-    }
-
-    // Fork without a session to copy starts a thread, as an ordinary open does.
-    func testAForkWithoutASessionStartsANewThread() async throws {
-        adapter = try asideAdapter(AsideText())
-        let info = try await adapter.open(SessionRequest(fork: true))
-        XCTAssertEqual(info.session, "thread-new")
-        XCTAssertEqual(methods(), ["initialize", "initialized", "thread/start"])
-    }
-
-    func testAnAsideStreamsItsAnswerAndMarksTheCommentary() async throws {
-        let text = AsideText()
-        adapter = try asideAdapter(text)
-        _ = try await adapter.open(SessionRequest(resume: "thread-old", fork: true))
-        let end = try await adapter.prompt(Message(id: "m_1", agent: "cx", text: "FAKE_SPEAK"))
-        XCTAssertEqual(end.outcome, .completed)
-        let turn = TurnEventTrace.lines(text.events)
-        XCTAssertEqual(turn.count, 9)
-        XCTAssertTrue(turn[0].hasSuffix("-c commentary"), "the remark is handed on, marked as one")
-        XCTAssertTrue(turn[2].hasSuffix("-a answer"))
-        XCTAssertEqual(text.runs, ["thinking", "Hello", "world"],
-                       "in order, all before prompt returned, each item a run of its own")
-        XCTAssertEqual(text.unended, [], "the adapter ended what Codex left open")
-        _ = try await adapter.prompt(Message(id: "m_2", agent: "cx", text: "FAKE_SPEAK"))
-        XCTAssertEqual(text.runs, ["thinking", "Hello", "world", "thinking", "Hello", "world"])
-        XCTAssertEqual(text.unended, [])
-    }
-
-    func testTheAsidesInstructionsLeadOnlyItsFirstTurn() async throws {
-        adapter = try asideAdapter(AsideText())
-        _ = try await adapter.open(SessionRequest(resume: "thread-old", fork: true))
-        _ = try await adapter.prompt(Message(id: "m_1", agent: "cx", text: "hello"))
-        let first = try XCTUnwrap(request("turn/start")?["input"] as? [[String: Any]])
-        XCTAssertEqual(first.first?["text"] as? String, Self.asideInstructions + "\n\n---\n\nhello")
-        _ = try await adapter.prompt(Message(id: "m_2", agent: "cx", text: "again"))
-        let second = try XCTUnwrap(request("turn/start")?["input"] as? [[String: Any]])
-        XCTAssertEqual(second.first?["text"] as? String, "again", "the user's words alone")
-    }
-
-    func testAnAsideHasNoSiriusMCPServer() async throws {
-        adapter = try asideAdapter(AsideText())
-        _ = try await adapter.open(SessionRequest(resume: "thread-old", fork: true))
-        let argv = try XCTUnwrap(CodexFakeAppServer.arguments(in: root)?["argv"] as? [String])
-        XCTAssertFalse(argv.contains { $0.hasPrefix("mcp_servers.") }, "\(argv)")
-        XCTAssertTrue(argv.contains("sandbox_workspace_write.network_access=true"))
-    }
-
-    // AsideOptions: the aside has no way to the user through Sirius. Claude
-    // and Muse take SIRIUS_SOCKET out of an aside's environment; Codex
-    // still sets it (CodexAdapter.open).
-    func testAnAsidesEnvironmentHasNoSocket() async throws {
-        adapter = try asideAdapter(AsideText())
-        _ = try await adapter.open(SessionRequest(resume: "thread-old", fork: true))
-        let launch = try XCTUnwrap(CodexFakeAppServer.arguments(in: root))
-        XCTAssertNil(launch["socket"] as? String)
-    }
-
     func testFindsCodexRegisteredThenOnPathThenInChatGPT() {
         let registered = "/custom/codex"
         let onPath = "/usr/local/bin/codex"
@@ -446,18 +344,6 @@ final class CodexLaunchConfigTests: XCTestCase {
         let new = CodexLaunch.arguments(mcpHelper: "/h", socketPath: "/s", workers: "Do it.",
                                         capabilities: CodexCapabilities(version: "0.147.0"))
         XCTAssertEqual(new.filter { $0.hasPrefix("features.multi_agent_v2") }.count, 2)
-    }
-
-    func testAnAsideLeavesOutTheSiriusMCPServer() {
-        let full = CodexLaunch.arguments(mcpHelper: "/h", socketPath: "/s", workers: "Do it.")
-        let aside = CodexLaunch.arguments(mcpHelper: "/h", socketPath: "/s", workers: "Do it.", aside: true)
-        XCTAssertFalse(aside.contains { $0.hasPrefix("mcp_servers.") })
-        XCTAssertFalse(aside.contains { $0.contains("/s") }, "no socket anywhere")
-        let fullValues = full.filter { $0 != "-c" && !$0.hasPrefix("mcp_servers.") }
-        let asideValues = aside.filter { $0 != "-c" }
-        XCTAssertEqual(asideValues, fullValues, "the rest unchanged")
-        XCTAssertEqual(CodexLaunch.arguments(mcpHelper: "/h", socketPath: "/s", aside: false),
-                       CodexLaunch.arguments(mcpHelper: "/h", socketPath: "/s"))
     }
 
     func testWorkersMdIsWhatWorkerAgentsAreGiven() {

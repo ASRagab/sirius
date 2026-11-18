@@ -37,20 +37,6 @@ public enum MessageRenderer {
         return lines.joined(separator: "\n")
     }
 
-    // A turn in an aside (AsideSession): the user's words as they typed
-    // them, with no wrapper and no reply note, since there the agent's own
-    // words are the reply. Attachments are named by path below them.
-    public static func renderAside(_ message: Message) -> String {
-        guard !message.attachments.isEmpty || message.context != nil else { return message.text }
-        var lines = [message.text]
-        if !message.attachments.isEmpty { lines.append("") }
-        for attachment in message.attachments {
-            lines.append("<attachment path=\"\(escape(attachment.path))\" type=\"\(escape(attachment.mimeType))\"/>")
-        }
-        if let context = message.context { lines += [""] + contextLines(context, message: message.id) }
-        return lines.joined(separator: "\n")
-    }
-
     // What the app in front had open and selected (Message.Context). The
     // items the user was pointing at come first, with their text; the rest
     // of what was open is one line each. The text is another app's content,

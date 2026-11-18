@@ -16,14 +16,6 @@ final class CodexAppServer: @unchecked Sendable {
     private var finishedTurns: [String: JSONValue] = [:]
     // Set once, from the transport: why the connection is gone.
     private var failure: Error?
-    // An aside's: what the agent says (TurnEvent), called on the reader's
-    // thread in the order read, so all of a turn's events have gone before
-    // its turn/completed resumes the wait. Set before launch().
-    private var onEvent: (@Sendable (TurnEvent) -> Void)?
-    // The thread whose events are handed on; another's (a subagent's) are
-    // not. And what its turn has said so far.
-    private var followed: String?
-    private var events = CodexEvents()
 
     init(executable: URL, arguments: [String], environment: [String: String], directory: URL) {
         transport = JSONRPCStdio(name: "app-server", errorLabel: "codex app-server", executable: executable,
@@ -41,14 +33,6 @@ final class CodexAppServer: @unchecked Sendable {
     // (received). For tests and diagnostics.
     func observe(_ observer: @escaping @Sendable (String) -> Void) {
         transport.observe(observer)
-    }
-
-    func stream(to onEvent: @escaping @Sendable (TurnEvent) -> Void) {
-        lock.withLock { self.onEvent = onEvent }
-    }
-
-    func follow(thread: String) {
-        lock.withLock { followed = thread }
     }
 
     func launch() throws { try transport.launch() }
@@ -92,7 +76,6 @@ final class CodexAppServer: @unchecked Sendable {
     // MARK: - Codex's own
 
     private func didNotify(_ method: String, _ params: JSONValue) {
-        hand(on: method, params)
         guard method == "turn/completed", let turn = params["turn"], let turnId = turn["id"]?.string else { return }
         let waiter: CheckedContinuation<JSONValue, Error>? = lock.withLock {
             if let waiter = turnWaiters.removeValue(forKey: turnId) { return waiter }
@@ -100,17 +83,6 @@ final class CodexAppServer: @unchecked Sendable {
             return nil
         }
         waiter?.resume(returning: turn)
-    }
-
-    // An aside's: the events a notification about the followed thread
-    // makes, and at the turn's end those that end what it left open.
-    private func hand(on method: String, _ params: JSONValue) {
-        let (sink, said): ((@Sendable (TurnEvent) -> Void)?, [TurnEvent]) = lock.withLock {
-            guard let onEvent else { return (nil, []) }
-            if let followed, let thread = params["threadId"]?.string, thread != followed { return (nil, []) }
-            return (onEvent, method == "turn/completed" ? events.end() : events.hear(method, params))
-        }
-        said.forEach { sink?($0) }
     }
 
     // Sirius never grants anything: approvals are declined, everything else
@@ -127,8 +99,6 @@ final class CodexAppServer: @unchecked Sendable {
     }
 
     private func fail(_ error: Error) {
-        // The turn running ends here, with whatever it left open.
-        hand(on: "turn/completed", .object([:]))
         let turns = lock.withLock { () -> [CheckedContinuation<JSONValue, Error>] in
             if failure == nil { failure = error }
             defer { turnWaiters.removeAll() }

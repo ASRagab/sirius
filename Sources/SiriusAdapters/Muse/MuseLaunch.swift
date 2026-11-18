@@ -50,16 +50,10 @@ enum MuseLaunch {
     // The child's environment: the socket for the sirius helpers, the
     // helpers first on PATH, and no self-update mid-session (§6.4). Only
     // the child's: the user's own muse keeps updating.
-    // An aside gets neither the socket nor the helpers: its words are its reply.
-    static func environment(_ base: [String: String], socketPath: String, helpers: URL,
-                            aside: Bool = false) -> [String: String] {
+    static func environment(_ base: [String: String], socketPath: String, helpers: URL) -> [String: String] {
         var env = base
-        if aside {
-            env[SiriusEnvironment.socket] = nil
-        } else {
-            env[SiriusEnvironment.socket] = socketPath
-            env["PATH"] = helpers.path + ":" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
-        }
+        env[SiriusEnvironment.socket] = socketPath
+        env["PATH"] = helpers.path + ":" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
         env["MUSE_NO_AUTO_UPDATE"] = "1"
         return env
     }

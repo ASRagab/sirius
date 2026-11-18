@@ -22,14 +22,6 @@ import SiriusProtocol
 // Declares steer only. Sirius doesn't compact Codex yet (app-server has
 // thread/compact/start), doesn't hear turns Codex starts by itself, and
 // doesn't read its usage, so `updates` never yields.
-//
-// An aside (AsideOptions) is a second app-server on a fork of the agent's
-// thread: thread/fork gives it the history under a new id, read from the
-// rollout on disk, and leaves the agent's own process and thread alone,
-// mid-turn included; its answer streams as item/agentMessage/delta
-// (checked on 0.159.1). A fork keeps the developer instructions in its
-// history whatever thread/fork is given, so the aside's instructions go
-// at the head of its first turn instead. It has no sirius MCP server.
 public actor CodexAdapter: Adapter {
     public nonisolated let registration: AgentRegistration
     public nonisolated let socketPath: String
@@ -39,9 +31,6 @@ public actor CodexAdapter: Adapter {
     public nonisolated let instructions: String?
     // Given to the worker agents it starts (CodexLaunch.arguments).
     public nonisolated let workerInstructions: String?
-    private let aside: AsideOptions?
-    // Whether the aside's instructions have gone with a turn of this thread.
-    private var briefed = false
 
     private var server: CodexAppServer?
     private var thread: String?
@@ -56,8 +45,7 @@ public actor CodexAdapter: Adapter {
     static let capabilities = AgentCapabilities(steer: true)
 
     public init(registration: AgentRegistration, socketPath: String, helpersDirectory: URL,
-                instructions: String? = nil, workerInstructions: String? = nil, aside: AsideOptions? = nil) {
-        self.aside = aside
+                instructions: String? = nil, workerInstructions: String? = nil) {
         self.registration = registration
         self.socketPath = socketPath
         self.helpersDirectory = helpersDirectory
@@ -86,8 +74,7 @@ public actor CodexAdapter: Adapter {
         let capabilities = await CodexProbe.shared.capabilities(executable: executable, environment: environment)
         guard !capabilities.isTooOld else { throw CodexAdapterError.tooOld(version: capabilities.version) }
         var childEnvironment = environment
-        // An aside has no way to Sirius: its words are the reply.
-        childEnvironment[SiriusEnvironment.socket] = aside == nil ? socketPath : nil
+        childEnvironment[SiriusEnvironment.socket] = socketPath
         // Helpers first on PATH, as for Claude, so the shell reaches wmem.
         childEnvironment["PATH"] = helpersDirectory.path + ":"
             + (environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
@@ -96,14 +83,12 @@ public actor CodexAdapter: Adapter {
             executable: URL(fileURLWithPath: executable),
             arguments: CodexLaunch.arguments(mcpHelper: mcpHelper, socketPath: socketPath,
                                              fast: registration.isFast, workers: workerInstructions,
-                                             aside: aside != nil, capabilities: capabilities),
+                                             capabilities: capabilities),
             environment: childEnvironment,
             directory: URL(fileURLWithPath: registration.root, isDirectory: true))
         if let observer { server.observe(observer) }
-        if let aside { server.stream(to: aside.onEvent) }
         try server.launch()
         self.server = server
-        briefed = false
 
         do {
             _ = try await server.request("initialize", .object([
@@ -111,9 +96,8 @@ public actor CodexAdapter: Adapter {
                                        "version": .string(Self.clientVersion)]),
             ]))
             try server.notify("initialized")
-            let opened = try await openThread(on: server, resuming: session, fork: request.fork)
+            let opened = try await openThread(on: server, resuming: session)
             thread = opened.id
-            server.follow(thread: opened.id)
             model = opened.model ?? registration.model
             return SessionInfo(session: opened.id, model: model, effort: opened.effort ?? registration.effort,
                                capabilities: Self.capabilities)
@@ -135,13 +119,7 @@ public actor CodexAdapter: Adapter {
 
     public func prompt(_ message: Message) async throws -> TurnEnd {
         guard let server, let thread else { throw CodexAdapterError.notStarted }
-        var lead: String?
-        if let aside, !briefed {
-            lead = aside.instructions
-            briefed = true
-        }
-        let params = Self.turnParams(thread: thread, message: message, effort: registration.effort,
-                                     aside: aside != nil, lead: lead)
+        let params = Self.turnParams(thread: thread, message: message, effort: registration.effort)
         let started = try await server.request("turn/start", .object(params))
         guard let turnId = started["turn"]?["id"]?.string else {
             throw CodexAdapterError.unexpectedResponse("turn/start returned no turn id")
@@ -169,7 +147,7 @@ public actor CodexAdapter: Adapter {
             _ = try await server.request("turn/steer", .object([
                 "threadId": .string(thread),
                 "expectedTurnId": .string(activeTurn),
-                "input": .array(Self.input(for: message, aside: aside != nil)),
+                "input": .array(Self.input(for: message)),
             ]))
             return .joined
         } catch {
@@ -211,39 +189,18 @@ public actor CodexAdapter: Adapter {
     }
 
     // turn/start's params. Codex takes effort per turn, not per thread.
-    static func turnParams(thread: String, message: Message, effort: String?, aside: Bool = false,
-                           lead: String? = nil) -> [String: JSONValue] {
+    static func turnParams(thread: String, message: Message, effort: String?) -> [String: JSONValue] {
         var params: [String: JSONValue] = [
             "threadId": .string(thread),
-            "input": .array(input(for: message, aside: aside, lead: lead)),
+            "input": .array(input(for: message)),
         ]
         if let effort { params["effort"] = .string(effort) }
         return params
     }
 
-    private func openThread(on server: CodexAppServer, resuming session: String?,
-                            fork: Bool = false) async throws -> OpenedThread {
-        let params = Self.threadParams(registration: registration, instructions: aside?.instructions ?? instructions)
-        if let session, fork {
-            // excludeTurns: the response then leaves the history out, which
-            // Sirius never reads, and Codex does not warn of its
-            // deprecated full hydration. A fork kept on disk can be
-            // resumed should this app-server die; where Codex refuses one,
-            // an ephemeral fork still carries the history.
-            var forked = params
-            forked["threadId"] = .string(session)
-            forked["excludeTurns"] = .bool(true)
-            do {
-                return try opened(try await server.request("thread/fork", .object(forked)))
-            } catch CodexAppServerError.rpc {
-                forked["ephemeral"] = .bool(true)
-                do {
-                    return try opened(try await server.request("thread/fork", .object(forked)))
-                } catch CodexAppServerError.rpc {
-                    // No rollout to fork from: the aside starts empty.
-                }
-            }
-        } else if let session {
+    private func openThread(on server: CodexAppServer, resuming session: String?) async throws -> OpenedThread {
+        let params = Self.threadParams(registration: registration, instructions: instructions)
+        if let session {
             var resume = params
             resume["threadId"] = .string(session)
             do {
@@ -266,11 +223,8 @@ public actor CodexAdapter: Adapter {
 
     // The rendered wrapper, then each image beside it as a native image the
     // model can see. The wrapper still names its path (DECIDED 2026.10.09).
-    // In an aside the text is the user's words alone, after `lead` (the
-    // aside's instructions) on its first turn.
-    static func input(for message: Message, aside: Bool = false, lead: String? = nil) -> [JSONValue] {
-        var text = aside ? MessageRenderer.renderAside(message) : MessageRenderer.render(message)
-        if let lead { text = lead + "\n\n---\n\n" + text }
+    static func input(for message: Message) -> [JSONValue] {
+        let text = MessageRenderer.render(message)
         var items: [JSONValue] = [.object([
             "type": .string("text"),
             "text": .string(text),

@@ -303,101 +303,14 @@ final class MuseAdapterTests: XCTestCase {
         }
     }
 
-    // MARK: Asides
-
-    static let asideInstructions = "Answer here, in your own words."
-
-    private func asideAdapter(_ text: AsideText) throws -> MuseAdapter {
-        let executable = try MuseFakeServe.install(in: root)
-        let registration = AgentRegistration(agent: "mu", name: "Muse", harness: .museCode,
-                                             executable: executable, root: root.path, model: "muse-wonder-1.0")
-        var env = ProcessInfo.processInfo.environment
-        env["SIRIUS_SOCKET"] = "/tmp/inherited.sock"
-        return MuseAdapter(registration: registration, socketPath: "/tmp/sirius-test/mu.sock",
-                           helpersDirectory: URL(fileURLWithPath: "/opt/sirius/Helpers"),
-                           instructions: Self.instructions, environment: env,
-                           aside: AsideOptions(instructions: Self.asideInstructions, onEvent: { text.append($0) }))
-    }
-
-    func testAForkedAsideOpensItsOwnSessionAllowingAll() async throws {
-        adapter = try asideAdapter(AsideText())
-        let info = try await adapter.open(SessionRequest(resume: "s-old", fork: true))
-        XCTAssertEqual(info.session, "fork-of-s-old", "the fork's id, not the parent's")
-        let opening = methods().filter { $0.hasPrefix("session/") }
-        XCTAssertEqual(opening, ["session/fork", "session/setApprovalMode"])
-        let fork = try XCTUnwrap(request("session/fork"))
-        XCTAssertEqual(fork["sessionId"] as? String, "s-old")
-        XCTAssertEqual(fork["excludeItems"] as? Bool, true)
-        XCTAssertNotNil(fork["commandId"] as? String)
-        let mode = try XCTUnwrap(request("session/setApprovalMode"))
-        XCTAssertEqual(mode["sessionId"] as? String, "fork-of-s-old")
-        XCTAssertEqual(mode["mode"] as? String, "allowAll")
-        let end = try await adapter.prompt(Message(id: "m_1", agent: "mu", text: "hi"))
-        XCTAssertEqual(end, TurnEnd(session: "fork-of-s-old", outcome: .completed, model: "muse-wonder-1.0"))
-        XCTAssertEqual(request("turn/start")?["sessionId"] as? String, "fork-of-s-old")
-    }
-
-    func testARefusedForkStartsAnEmptySessionWithoutSiriusMCP() async throws {
-        adapter = try asideAdapter(AsideText())
-        let info = try await adapter.open(SessionRequest(resume: "missing", fork: true))
-        XCTAssertEqual(info.session, "session-new")
-        XCTAssertEqual(methods().filter { $0.hasPrefix("session/") }, ["session/fork", "session/start"])
-        let start = try XCTUnwrap(request("session/start"))
-        XCTAssertEqual(start["approvalMode"] as? String, "allowAll")
-        XCTAssertNil((start["config"] as? [String: Any])?["mcpServers"])
-    }
-
-    func testAnAsideStreamsOnlyItsAgentMessagesText() async throws {
-        let text = AsideText()
-        adapter = try asideAdapter(text)
-        _ = try await adapter.open(SessionRequest(resume: "s-old", fork: true))
-        let end = try await adapter.prompt(Message(id: "m_1", agent: "mu", text: "FAKE_SPEAK"))
-        XCTAssertEqual(end.outcome, .completed)
-        XCTAssertEqual(text.pieces, ["Hel", "lo", "world"],
-                       "no reasoning, no other field, no other session; all before prompt returned")
-        XCTAssertEqual(text.runs, ["Hello", "world"], "a second item a run of its own")
-        XCTAssertEqual(text.unended, [], "every run ended before prompt returned")
-        _ = try await adapter.prompt(Message(id: "m_2", agent: "mu", text: "FAKE_SPEAK"))
-        XCTAssertEqual(text.runs, ["Hello", "world", "Hello", "world"])
-        XCTAssertEqual(text.unended, [])
-    }
-
-    func testTheAsidesInstructionsLeadOnlyItsFirstTurnAndAreItsPrompt() async throws {
-        adapter = try asideAdapter(AsideText())
-        _ = try await adapter.open(SessionRequest(resume: "s-old", fork: true))
-        _ = try await adapter.prompt(Message(id: "m_1", agent: "mu", text: "hello"))
-        let first = try XCTUnwrap(request("turn/start")?["input"] as? [[String: Any]])
-        XCTAssertEqual(first.first?["text"] as? String, Self.asideInstructions + "\n\n---\n\nhello")
-        _ = try await adapter.prompt(Message(id: "m_2", agent: "mu", text: "again"))
-        let second = try XCTUnwrap(request("turn/start")?["input"] as? [[String: Any]])
-        XCTAssertEqual(second.first?["text"] as? String, "again")
-
-        let argv = try XCTUnwrap(MuseFakeServe.arguments(in: root)?["argv"] as? [String])
-        let config = argv[try XCTUnwrap(argv.firstIndex(of: "-c")) + 1]
-        XCTAssertEqual(config, #"run.developer_prompt="Answer here, in your own words.""#)
-    }
-
-    func testAnAsideHostHasNoWayToSirius() async throws {
-        adapter = try asideAdapter(AsideText())
-        _ = try await adapter.open(SessionRequest(resume: "s-old", fork: true))
-        let launched = try XCTUnwrap(MuseFakeServe.arguments(in: root))
-        XCTAssertNil(launched["socket"] as? String, "not even one inherited")
-        XCTAssertFalse((launched["path"] as? String)?.hasPrefix("/opt/sirius/Helpers:") == true)
-        XCTAssertEqual(launched["noUpdate"] as? String, "1")
-    }
-
-    func testTheAsideEnvironmentDropsTheSocketAndHelpers() {
+    func testTheEnvironmentCarriesTheSocketAndPutsTheHelpersFirst() {
         let helpers = URL(fileURLWithPath: "/opt/sirius/Helpers")
         let base = ["PATH": "/usr/bin", "SIRIUS_SOCKET": "/tmp/inherited.sock", "HOME": "/Users/u"]
-        let aside = MuseLaunch.environment(base, socketPath: "/s", helpers: helpers, aside: true)
-        XCTAssertNil(aside["SIRIUS_SOCKET"])
-        XCTAssertEqual(aside["PATH"], "/usr/bin")
-        XCTAssertEqual(aside["HOME"], "/Users/u")
-        XCTAssertEqual(aside["MUSE_NO_AUTO_UPDATE"], "1")
         let agent = MuseLaunch.environment(base, socketPath: "/s", helpers: helpers)
         XCTAssertEqual(agent["SIRIUS_SOCKET"], "/s")
         XCTAssertEqual(agent["PATH"], "/opt/sirius/Helpers:/usr/bin")
-        XCTAssertEqual(MuseLaunch.environment(base, socketPath: "/s", helpers: helpers, aside: false), agent)
+        XCTAssertEqual(agent["HOME"], "/Users/u")
+        XCTAssertEqual(agent["MUSE_NO_AUTO_UPDATE"], "1")
     }
 
     func testFindsMuseRegisteredThenOnPathThenInstalled() {
