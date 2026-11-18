@@ -357,21 +357,15 @@ final class AmbientContextTests: XCTestCase {
 
     // MARK: Small things
 
-    // An agent's anchor, as the asides use it: the handle back to the item
-    // in full, then the provider that issued it asked where it is.
-    func testAHandleLeadsBackToWhereTheItemIs() async throws {
+    // An item named in full: the provider that issued it is asked where it is.
+    func testAnItemsRefLeadsBackToWhereItIs() async throws {
         try fake.writeDescriptor(in: directory)
-        let anchors = AmbientAnchors()
         let snapshot = try await source().snapshot(frontPID: me, bundleID: fake.bundleID)
-        let context = snapshot.messageContext(anchors: anchors)
-        let handle = try XCTUnwrap(context.items.first { $0.id == "sel-1" }?.anchor)
-        XCTAssertNil(context.items.first { $0.id == "doc-1" }?.anchor)
-
-        let item = try XCTUnwrap(anchors.resolve(handle))
+        let item = snapshot.ref("sel-1")
         let location = await source().locate(item)
         XCTAssertEqual(location?.rects, [AmbientRect(x: 425, y: 233, w: 480, h: 20)])
 
-        // The app restarts: the handle still resolves, and the item is gone.
+        // The app restarts: the item is gone.
         fake.instance = "run-2"
         try fake.writeDescriptor(in: directory)
         let after = await source().locate(item)

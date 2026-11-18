@@ -120,10 +120,6 @@ MainActor.assumeIsolated {
     // ⌘⇧J opens the composer.
     let composerTarget = HostComposerTarget(host: host)
     let composer = ComposerController(target: composerTarget)
-    // The handles an agent hands back to open an aside beside an item:
-    // given out with each message's context, resolved by the asides.
-    let anchors = AmbientAnchors()
-    composer.anchors = anchors
     DevDemo.openComposer = { composer.open() }
     // A shortcut that cannot be had says so and stays until clicked; the
     // menu's Compose still opens the composer.
@@ -142,7 +138,6 @@ MainActor.assumeIsolated {
     let dictationAgents = DictationAgents(target: composerTarget)
     composer.onAgents = { dictationAgents.set($0) }
     let delivery = SiriusDelivery(composer: composer, target: composerTarget, agents: { dictationAgents.addresses })
-    delivery.anchors = anchors
     let dictation = DictationService(
         delivery: delivery,
         model: DictationModel(),

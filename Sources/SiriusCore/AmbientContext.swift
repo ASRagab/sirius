@@ -597,12 +597,6 @@ public struct AmbientSnapshot: Equatable, Sendable {
     // How many things the tree names, for the log.
     public var count: Int { tree.root.inside }
 
-    // The item an aside would sit beside: the first selected element, or
-    // the innermost focused one; never one that is only hovered.
-    public var anchor: AmbientItemRef? {
-        (tree.selected.first ?? tree.focusPath.last).map { ref($0.id) }
-    }
-
     // What the composer's context line says (AmbientSummary).
     public var summary: AmbientSummary { AmbientSummary(tree, app: appName) }
 
@@ -616,18 +610,14 @@ public struct AmbientSnapshot: Equatable, Sendable {
     // The helper's process id when a helper answered, for the log.
     public var helper: Int32? { provider.descriptor.answersFor == nil ? nil : provider.descriptor.pid }
 
-    // The form that goes on a message. Text is sent for what the user is
-    // pointing at only; everything else open is named, not quoted.
-    public var messageContext: Message.Context { messageContext(anchors: nil) }
-
     // The most elements one message carries, and the most characters of
     // an attribute's value.
     public static let maxElements = 150
     public static let maxAttributes = 8
     public static let maxAttributeChars = 200
 
-    // The same, with a handle from `anchors` on every item an aside could
-    // sit beside, for a message whose agent may open one.
+    // The form that goes on a message. Text is sent for what the user is
+    // pointing at only; everything else open is named, not quoted.
     //
     // The tree as the items of a message, parents before children, each
     // naming its parent. The root is left out: it is the app, which the
@@ -640,7 +630,7 @@ public struct AmbientSnapshot: Equatable, Sendable {
     // what is inside it. If the tree is still too large, the same is done
     // to every branch that holds nothing pointed at, and whatever is over
     // the limit after that is dropped and counted.
-    public func messageContext(anchors: AmbientAnchors?) -> Message.Context {
+    public var messageContext: Message.Context {
         let path = Set(tree.focusPath.map(\.id))
         let hovered = tree.hovered?.id
         var pointed: Set<String> = [] // holds, or is, something pointed at
@@ -674,12 +664,10 @@ public struct AmbientSnapshot: Equatable, Sendable {
                     }
                     textLeft -= min(scalars.count, textLeft)
                 }
-                let anchored = element.selected || element.id == tree.focusPath.last?.id
                 items.append(Message.Context.Item(
                     id: element.id, type: element.role, title: element.title ?? "", url: element.url,
                     parent: parent, lines: Self.lines(element.attributes), text: text,
                     focused: path.contains(element.id),
-                    anchor: anchored ? anchors?.handle(for: ref(element.id)) : nil,
                     subrole: element.subrole, selected: element.selected ? true : nil,
                     hovered: element.id == hovered ? true : nil, visible: visible ? nil : false,
                     attributes: Self.attributes(element.attributes),
@@ -1304,55 +1292,6 @@ public struct AmbientContextSource: Sendable {
     }
 }
 
-// MARK: - Anchors
-
-// The handles Sirius gives an agent for the items it may open an aside
-// beside. A provider's id means something only to one run of one app, and
-// two apps may both call an item `sel-1`; a handle names the item in full,
-// and is all the agent has to pass back. Kept in memory: the latest
-// `capacity`, and none across a restart of Sirius, by which time what they
-// pointed at has usually moved.
-public final class AmbientAnchors: @unchecked Sendable {
-    public static let handleLength = 10
-    private static let alphabet = Array("abcdefghjkmnpqrstuvwxyz23456789")
-
-    private let capacity: Int
-    private let lock = NSLock()
-    private var refs: [String: AmbientItemRef] = [:]
-    private var handles: [AmbientItemRef: String] = [:]
-    private var order: [String] = []
-
-    public init(capacity: Int = 256) {
-        self.capacity = max(1, capacity)
-    }
-
-    // The item's handle: the one it already has, or a new one. Random, so
-    // an agent cannot make up one that points somewhere.
-    public func handle(for ref: AmbientItemRef) -> String {
-        lock.lock(); defer { lock.unlock() }
-        if let known = handles[ref] { return known }
-        var handle: String
-        repeat {
-            handle = String((0..<Self.handleLength).map { _ in Self.alphabet.randomElement() ?? "a" })
-        } while refs[handle] != nil
-        refs[handle] = ref
-        handles[ref] = handle
-        order.append(handle)
-        if order.count > capacity {
-            let oldest = order.removeFirst()
-            if let gone = refs.removeValue(forKey: oldest) { handles[gone] = nil }
-        }
-        return handle
-    }
-
-    // The item a handle was given for; nil for one never given, or given
-    // too long ago.
-    public func resolve(_ handle: String) -> AmbientItemRef? {
-        lock.lock(); defer { lock.unlock() }
-        return refs[handle]
-    }
-}
-
 // MARK: - What the composer holds
 
 // The context one opening of the composer has collected. The read is
@@ -1452,57 +1391,5 @@ public enum AmbientSendRead {
             lock.unlock()
             waiting?.resume(returning: value)
         }
-    }
-}
-
-// MARK: - Placing a window beside an item
-
-// Where a window of `size` goes so it sits beside a located item. Pure
-// arithmetic, in AppKit's screen coordinates (origin at the primary
-// display's bottom left); the location arrives in the protocol's (origin
-// at its top left, y downward) and is converted here.
-public enum AmbientPlacement {
-    // The protocol's rectangle in AppKit's coordinates.
-    public static func appKit(_ rect: AmbientRect, primaryHeight: CGFloat) -> CGRect {
-        CGRect(x: rect.x, y: primaryHeight - CGFloat(rect.y) - CGFloat(rect.h), width: rect.w, height: rect.h)
-    }
-
-    // The frame, or nil when the item is not visible, is on no screen, or
-    // there is no room beside it: the caller then places the window as it
-    // would with no item at all.
-    //
-    // The window goes on the provider's preferred `edge` of the area it
-    // asked to keep clear (`avoid`), or of the item when it named none;
-    // the opposite edge is tried when that side has no room. Along the
-    // other axis it lines up with the item, kept on the screen.
-    public static func frame(
-        beside location: AmbientLocation, size: CGSize, screens: [CGRect], primaryHeight: CGFloat,
-        gap: CGFloat = 16
-    ) -> CGRect? {
-        guard location.isVisible, let rects = location.rects else { return nil }
-        let item = rects.map { appKit($0, primaryHeight: primaryHeight) }.reduce(CGRect.null) { $0.union($1) }
-        guard !item.isNull, let screen = screens.first(where: { $0.contains(CGPoint(x: item.midX, y: item.midY)) }),
-              size.width <= screen.width, size.height <= screen.height
-        else { return nil }
-        let clear = location.avoid.map { appKit($0, primaryHeight: primaryHeight) }.map { $0.union(item) } ?? item
-
-        func clamped(_ value: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat { min(max(value, low), high) }
-        // Level with the item's top, a little above it so the title bar
-        // does not sit on the line.
-        let alongY = clamped(item.maxY + 28 - size.height, screen.minY, screen.maxY - size.height)
-        let alongX = clamped(item.minX, screen.minX, screen.maxX - size.width)
-
-        let right = CGRect(x: clear.maxX + gap, y: alongY, width: size.width, height: size.height)
-        let left = CGRect(x: clear.minX - gap - size.width, y: alongY, width: size.width, height: size.height)
-        let above = CGRect(x: alongX, y: clear.maxY + gap, width: size.width, height: size.height)
-        let below = CGRect(x: alongX, y: clear.minY - gap - size.height, width: size.width, height: size.height)
-        let order: [CGRect]
-        switch location.edge {
-        case "left": order = [left, right]
-        case "top": order = [above, below]
-        case "bottom": order = [below, above]
-        default: order = [right, left]
-        }
-        return order.first { screen.contains($0) }
     }
 }

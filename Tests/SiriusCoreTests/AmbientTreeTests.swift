@@ -242,9 +242,6 @@ final class AmbientTreeTests: XCTestCase {
         XCTAssertEqual(hovered.hovered, true)
         XCTAssertNil(hovered.text)
         XCTAssertFalse(hovered.focused)
-        // And it is not what an aside would sit beside.
-        XCTAssertEqual(snapshot.anchor?.id, "sel-4")
-        XCTAssertNil(snapshot.messageContext(anchors: AmbientAnchors()).items.first { $0.id == "th-7" }?.anchor)
     }
 
     func testOnlyTheFirstHoveredElementCounts() throws {
@@ -448,7 +445,7 @@ final class AmbientTreeTests: XCTestCase {
     }
 
     func testAMessageWithATreeSurvivesTheLog() throws {
-        let sent = message(try snapshot().messageContext(anchors: AmbientAnchors()))
+        let sent = message(try snapshot().messageContext)
         let back = try JSONDecoder().decode(Message.self, from: JSONEncoder().encode(sent))
         XCTAssertEqual(back, sent)
     }

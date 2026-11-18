@@ -60,9 +60,6 @@ final class ComposerController {
     // the composer, never Sirius. Nil when context is off, the user removed
     // it, or no app was behind.
     private var contextSource: (pid: Int32, bundleID: String)?
-    // Gives each item pointed at a handle its agent can open an aside
-    // beside (main.swift shares one table with the asides).
-    var anchors: AmbientAnchors?
     // Reads the app in front: its process and bundle id in, its context or
     // nil out. Replaced in tests.
     var readContext: (_ pid: Int32, _ bundleID: String) async -> AmbientSnapshot? = { pid, bundleID in
@@ -421,7 +418,7 @@ final class ComposerController {
         let reread = rereadContext()
         Task {
             defer { sending = false }
-            let context = await sendContext(held: held, reread: reread)?.messageContext(anchors: anchors)
+            let context = await sendContext(held: held, reread: reread)?.messageContext
             do {
                 try await target.send(text: text, attachments: files, context: context, to: agent)
                 // The text stays in the field while it closes, and clears once

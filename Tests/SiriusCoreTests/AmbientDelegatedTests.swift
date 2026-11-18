@@ -85,15 +85,13 @@ final class AmbientDelegatedTests: XCTestCase {
     func testAHelpersItemIsLocatedThroughTheHelper() async throws {
         fake.locations["p-1"] = ["id": "p-1", "state": "visible", "rects": [["x": 10, "y": 20, "w": 30, "h": 40]]]
         try fake.writeDescriptor(in: directory, answersFor: (app, front))
-        let anchors = AmbientAnchors()
         let snapshot = try await source().snapshot(frontPID: front, bundleID: app)
-        let ref = try XCTUnwrap(snapshot.anchor)
+        let ref = snapshot.ref("p-1")
         XCTAssertEqual(ref.bundleID, "org.example.browser.helper")
         XCTAssertEqual(ref.pid, me)
         XCTAssertEqual(ref.answersFor, .init(id: app, pid: front))
 
-        let handle = try XCTUnwrap(snapshot.messageContext(anchors: anchors).items.first { $0.id == "p-1" }?.anchor)
-        let location = try await source().location(of: try XCTUnwrap(anchors.resolve(handle)))
+        let location = try await source().location(of: ref)
         XCTAssertEqual(location.rects, [AmbientRect(x: 10, y: 20, w: 30, h: 40)])
 
         // The helper restarts: the item is gone, and is not asked about.

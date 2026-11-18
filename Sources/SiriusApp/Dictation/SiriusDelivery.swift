@@ -55,7 +55,6 @@ final class SiriusDelivery: TranscriptDelivery {
     var mode: DictationMode = .agent
     // Reads the app in front, as the composer does at each open. Replaced
     // in tests.
-    var anchors: AmbientAnchors?
     var readContext: (_ pid: Int32, _ bundleID: String) async -> AmbientSnapshot? = { pid, bundleID in
         await AmbientContextSource().context(frontPID: pid, bundleID: bundleID)
     }
@@ -117,7 +116,7 @@ final class SiriusDelivery: TranscriptDelivery {
               let bundleID = front.bundleIdentifier
         else { return nil }
         let snapshot = await readContext(front.processIdentifier, bundleID)
-        let context = snapshot?.messageContext(anchors: anchors)
+        let context = snapshot?.messageContext
         // Counts only: what was selected is never logged.
         let via = snapshot?.helper.map { " via helper \($0)" } ?? ""
         SiriusLog.dictation.info("dictation: context from \(bundleID)\(via): \(context?.items.count ?? 0) items")

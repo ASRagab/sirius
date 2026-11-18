@@ -46,11 +46,6 @@ public struct Message: Equatable, Sendable, Codable {
             public var text: String?
             // One of the items the user was pointing at.
             public var focused: Bool
-            // Sirius's own handle for an item the app can locate, which the
-            // agent hands back to open an aside beside it (`display aside`
-            // with `anchor`). Unlike the id, it names one item of one run
-            // of one app.
-            public var anchor: String?
             // The rest is set only for an element of a tree (0.2.0), where
             // `type` holds the role: how the thing is shown. `subrole` is
             // what it is, in the app's own word.
@@ -71,7 +66,7 @@ public struct Message: Equatable, Sendable, Codable {
 
             public init(id: String, type: String, title: String, url: String? = nil, parent: String? = nil,
                         lines: ClosedRange<Int>? = nil, text: String? = nil, focused: Bool = false,
-                        anchor: String? = nil, subrole: String? = nil, selected: Bool? = nil,
+                        subrole: String? = nil, selected: Bool? = nil,
                         hovered: Bool? = nil, visible: Bool? = nil, attributes: [String: String]? = nil,
                         inside: Int? = nil, cut: Bool? = nil) {
                 self.id = id
@@ -82,7 +77,6 @@ public struct Message: Equatable, Sendable, Codable {
                 self.lines = lines
                 self.text = text
                 self.focused = focused
-                self.anchor = anchor
                 self.subrole = subrole
                 self.selected = selected
                 self.hovered = hovered

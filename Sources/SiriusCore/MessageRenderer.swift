@@ -52,7 +52,6 @@ public enum MessageRenderer {
             if let url = item.url { open += " url=\"\(escape(url))\"" }
             if let range = item.lines { open += " lines=\"\(range.lowerBound)-\(range.upperBound)\"" }
             if item.focused { open += " focus=\"true\"" }
-            if let anchor = item.anchor { open += " anchor=\"\(escape(anchor))\"" }
             if let text = item.text, item.focused {
                 lines += [open + ">", text, "</item id=\"\(escape(item.id))\" message=\"\(escape(message))\">"]
             } else {
@@ -100,7 +99,6 @@ public enum MessageRenderer {
             if item.visible == false { open += " visible=\"false\"" }
             if let inside = item.inside, inside > 0 { open += " inside=\"\(inside)\"" }
             if item.cut == true { open += " cut=\"true\"" }
-            if let anchor = item.anchor { open += " anchor=\"\(escape(anchor))\"" }
             for name in (item.attributes ?? [:]).keys.sorted() where !reserved.contains(name) {
                 open += " \(name)=\"\(escape(item.attributes?[name] ?? ""))\""
             }
@@ -132,7 +130,7 @@ public enum MessageRenderer {
     // take over.
     private static let reserved: Set<String> = [
         "id", "subrole", "title", "url", "lines", "selected", "focused", "hovered", "visible", "inside", "cut",
-        "anchor", "message",
+        "message",
     ]
 
     // The role as a tag: one of the protocol's thirteen, lowercased; any
