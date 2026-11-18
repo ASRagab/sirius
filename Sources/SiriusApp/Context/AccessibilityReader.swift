@@ -25,6 +25,8 @@ struct AccessibilityReader {
     var maxElements = 1500
 
     static var isTrusted: Bool { AXIsProcessTrusted() }
+    // The apps whose document is web content, with an address of its own.
+    static let showsWebContent: Set<String> = ["com.apple.Safari", "com.apple.mail"]
 
     // The snapshot for `app`, running as `pid`, or nil when it shows
     // nothing to send. Blocking: call it off the main thread.
@@ -43,7 +45,7 @@ struct AccessibilityReader {
                                            documentURL: string(window, kAXDocumentAttribute))
         switch app.shape {
         case .folder:
-            reading.items = selectedFiles(in: window, deadline: deadline)
+            readFolder(window, deadline: deadline, into: &reading)
         case .document:
             // First, with time of its own: it is quick, and the search for
             // a selection may use all of the rest.
@@ -58,7 +60,10 @@ struct AccessibilityReader {
                 search(window, deadline: deadline, into: &reading)
             }
             // A page with nothing selected is still what is open.
-            if reading.documentURL == nil, reading.selectedText != nil, let area = firstWebArea(in: window, deadline: deadline) {
+            // Only where there is a page to find: looking for one in Notes or
+            // Preview walked the whole window and used the whole budget.
+            if Self.showsWebContent.contains(app.id), reading.documentURL == nil, reading.selectedText != nil,
+               let area = firstWebArea(in: window, deadline: deadline) {
                 describe(area, into: &reading)
             }
         }
@@ -168,7 +173,9 @@ struct AccessibilityReader {
         while !queue.isEmpty, seen < maxElements, Date() < deadline {
             let next = queue.removeFirst()
             seen += 1
-            if string(next, kAXRoleAttribute) == "AXWebArea" { return next }
+            let role = string(next, kAXRoleAttribute)
+            if role == "AXWebArea" { return next }
+            if role == "AXToolbar" || role == "AXOutline" || role == "AXTable" { continue }
             queue.append(contentsOf: children(next))
         }
         return nil
@@ -189,23 +196,48 @@ struct AccessibilityReader {
     // is a list per column, each with the folder on the way selected, and
     // the files the user chose are in the final one. The sidebar is a list
     // with a selection too, and is passed over.
-    private func selectedFiles(in window: AXUIElement, deadline: Date) -> [AccessibilityReading.Item] {
+    //
+    // Finder gives a window no address. The folder's is the one its
+    // selected files share (AccessibilityContext); with nothing selected it
+    // is the folder the first entry of the last list is in; and when the
+    // one thing selected is the folder the window is titled for (column
+    // view, a folder clicked and nothing chosen inside it), that folder is
+    // what is open and nothing counts as selected.
+    private func readFolder(_ window: AXUIElement, deadline: Date, into reading: inout AccessibilityReading) {
         var queue = [window]
         var seen = 0
         var found: [AXUIElement] = []
+        var lastList: AXUIElement?
         while !queue.isEmpty, seen < maxElements, Date() < deadline {
             let next = queue.removeFirst()
             seen += 1
             if string(next, kAXDescriptionAttribute) == "sidebar" { continue }
+            let role = string(next, kAXRoleAttribute)
+            let isList = role == "AXList" || role == "AXOutline"
+            if isList { lastList = next }
             let chosen = elements(next, kAXSelectedRowsAttribute) + elements(next, kAXSelectedChildrenAttribute)
             if !chosen.isEmpty {
                 found = chosen
                 // What is selected is not searched: a file holds no list.
                 continue
             }
+            // Nor are a list's own entries: there can be thousands.
+            if isList { continue }
             queue.append(contentsOf: children(next))
         }
-        return found.prefix(AccessibilityContext.maxItems).compactMap { file($0) }
+        var items = found.prefix(AccessibilityContext.maxItems).compactMap { file($0) }
+        if items.count == 1, let only = items.first, let address = only.url, let url = URL(string: address),
+           url.hasDirectoryPath, only.title == reading.windowTitle {
+            reading.documentURL = address
+            items = []
+        } else if items.isEmpty, let lastList {
+            for entry in children(lastList).prefix(3) {
+                guard let address = file(entry)?.url, let url = URL(string: address), url.isFileURL else { continue }
+                reading.documentURL = url.deletingLastPathComponent().absoluteString
+                break
+            }
+        }
+        reading.items = items
     }
 
     // A file's name and address: its own, or those of something just
@@ -315,6 +347,13 @@ enum AccessibilityProbe {
             return show ? "\"\(text.prefix(120))\"" : "\(text.count) chars"
         }
         print("\(app.name): \(took) ms")
+        if arguments.contains("--times") {
+            for _ in 0..<5 {
+                let again = Date()
+                _ = AccessibilityReader().reading(app: app, pid: running.processIdentifier)
+                print("  again: \(Int(Date().timeIntervalSince(again) * 1000)) ms")
+            }
+        }
         guard let reading else { exit(say("no window", 1)) }
         print("  window title: \(describe(reading.windowTitle))")
         print("  document url: \(describe(reading.documentURL))")

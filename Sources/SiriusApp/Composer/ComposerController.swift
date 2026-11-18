@@ -244,16 +244,37 @@ final class ComposerController {
         contextSource = (pid, bundleID)
         contextIcon = front.icon
         contextFavicon = front.bundleURL.flatMap { AmbientFavicon.data(inBundle: $0, bundleID: bundleID) }
+        // An app Sirius reads itself is known before it is read, so the
+        // line names it at once and the read fills in the rest.
+        let named = Self.readsItself(bundleID, defaults: defaults)
+        if let named {
+            panel.setContext(ContextLine.Model(subject: named, selection: nil, app: named, icon: contextIcon,
+                                               favicon: contextFavicon, preview: nil))
+        }
         let read = readContext
         Task { [weak self] in
             let answer = await read(pid, bundleID)
-            guard let self, self.ambient.accept(answer, ticket: ticket), let answer else { return }
+            guard let self else { return }
+            let current = self.ambient.ticket == ticket
+            guard self.ambient.accept(answer, ticket: ticket), let answer else {
+                // Nothing to send after all: the name comes off the line.
+                if current, named != nil { self.panel.setContext(nil) }
+                return
+            }
             self.showContext(answer)
             self.startWatch(on: answer.provider)
             // Ids and counts only: what was selected is never logged.
             let via = answer.provider.isNative ? " via accessibility" : answer.helper.map { " via helper \($0)" } ?? ""
             SiriusLog.composer.info("context from \(bundleID)\(via): \(answer.count) items")
         }
+    }
+
+    // The name of an app Sirius reads through Accessibility, when it is
+    // switched on and Sirius may read it.
+    static func readsItself(_ bundleID: String, defaults: UserDefaults) -> String? {
+        guard let app = NativeApps.app(bundleID), NativeApps.isOn(app, in: defaults),
+              ContextProviders.isOn(bundleID, in: defaults), AccessibilityReader.isTrusted else { return nil }
+        return app.name
     }
 
     // While the composer is open the user can click into the app behind
