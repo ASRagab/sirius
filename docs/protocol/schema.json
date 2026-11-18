@@ -7,9 +7,6 @@
         "alert": {
           "type": "boolean"
         },
-        "anchor": {
-          "type": "string"
-        },
         "content": {
           "anyOf": [
             {
@@ -331,16 +328,12 @@
         "kind": {
           "enum": [
             "toast",
-            "dialog",
-            "aside"
+            "dialog"
           ],
           "type": "string"
         },
         "replace": {
           "type": "boolean"
-        },
-        "session": {
-          "type": "string"
         }
       },
       "required": [

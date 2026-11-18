@@ -208,17 +208,15 @@ export type Method = "display" | "notify" | "speak";
 /* ------------------------------------------------------------------------------------------ */
 
 /**
- * DECIDED: three kinds. toast and aside are built; dialog is named but its content is deferred,
- * and until then it fails with KIND_NOT_AVAILABLE.
+ * DECIDED: two kinds. toast is built; dialog is named but its content is deferred, and until
+ * then it fails with KIND_NOT_AVAILABLE.
  *
- * aside (DECIDED 2026.11.09, replacing "does not ship at launch", 2026.10.09): opens a window
- * beside the user's work for an answer too long for a toast, or one that will take back-and-forth.
- * Its content is not the answer but a brief: text saying what to answer there. Sirius forks the
- * agent's session, gives the fork the brief as its first turn, and streams the fork's own words
- * into the window; what the user types there goes to the fork. The agent that sent it ends its
- * turn. A blank brief is INVALID_PARAMS.
+ * "aside" was a kind from 2026.11.09 to 2026.11.17 (a window on a fork of the agent's session)
+ * and was removed, along with its `session` and `anchor` fields. It now fails as any unknown kind
+ * does, UNKNOWN_DISPLAY_KIND, with a message that says what to do instead. The protocol version
+ * did not change: only Sirius's own helpers sent the kind.
  */
-export type DisplayKind = "toast" | "dialog" | "aside";
+export type DisplayKind = "toast" | "dialog";
 
 export interface DisplayParams {
   /** Unknown kind: UNKNOWN_DISPLAY_KIND. */
@@ -233,16 +231,6 @@ export interface DisplayParams {
    * toast; with nothing to replace, the toast queues as usual.
    */
   replace?: boolean;
-  /** aside only. Binds the Aside to another session. DEFERRED: INVALID_PARAMS until built. */
-  session?: string;
-  /**
-   * aside only. Opens the aside beside an item the user had open or selected. The value is the
-   * `anchor` Sirius wrote on that item in the `<context>` of a message to this agent: Sirius's own
-   * handle, lowercase letters and digits, at most 64. It is not the item's id. An anchor never
-   * fails the display: one Sirius no longer knows, or whose item has gone or is out of view,
-   * opens the aside in its usual place. On another kind, or not of that shape: INVALID_PARAMS.
-   */
-  anchor?: string;
 }
 
 export type DisplayRequest = Request<"display", DisplayParams>;
@@ -416,7 +404,6 @@ export interface Annotations {
 export const KIND_CONTENT: { [K in DisplayKind]: ContentBlock["type"][] | "not-available" } = {
   toast: ["text"],
   dialog: "not-available",
-  aside: ["text"],
 };
 
 /**
@@ -454,8 +441,6 @@ export const LIMITS = {
   /** Across all text blocks. */
   maxTextChars: 20_000,
   maxToastChars: 280,
-  /** An aside's brief. */
-  maxAsideChars: 2_000,
   maxNotifyChars: 1_000,
   maxSpeakChars: 2_000,
   maxImageBytesDecoded: 6 * 1024 * 1024,

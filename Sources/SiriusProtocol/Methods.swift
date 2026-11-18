@@ -1,18 +1,18 @@
 public enum DisplayKind: String, CaseIterable, Sendable, Codable {
-    case toast, dialog, aside
+    case toast, dialog
 
     // The block types each kind accepts; nil while the kind is not built.
     public var accepts: Set<ContentBlock.BlockType>? {
         switch self {
         case .toast: [.text]
-        // The brief the aside's session answers from, as text.
-        case .aside: [.text]
         case .dialog: nil
         }
     }
 
-    // What an agent that still asks for an aside is told: the kind was
-    // removed, and an instruction file written before then may still name it.
+    // "aside" was a kind from 2026.11.09 to 2026.11.17. An agent that still
+    // asks for one is told what to do instead: an instruction file written
+    // before then may still name it.
+    public static let removedAside = "aside"
     public static let asideRemoved = "display aside was removed; answer with a toast, or write a file and say where it is" // TODO(copy): copy
 }
 
@@ -27,20 +27,12 @@ public struct DisplayParams: Equatable, Sendable, Encodable {
     // toast only. Takes the place of the agent's own toast, on screen or
     // waiting, instead of queueing behind it.
     public var replace: Bool?
-    // aside only. Deferred: refused until it is built.
-    public var session: String?
-    // aside only. The handle of an item from a message's context, to open
-    // the aside beside.
-    public var anchor: String?
 
-    public init(kind: DisplayKind, content: [ContentBlock], alert: Bool? = nil, replace: Bool? = nil,
-                session: String? = nil, anchor: String? = nil) {
+    public init(kind: DisplayKind, content: [ContentBlock], alert: Bool? = nil, replace: Bool? = nil) {
         self.kind = kind
         self.content = content
         self.alert = alert
         self.replace = replace
-        self.session = session
-        self.anchor = anchor
     }
 }
 

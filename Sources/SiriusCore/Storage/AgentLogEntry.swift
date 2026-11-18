@@ -125,12 +125,11 @@ public struct CommandSummary: Equatable, Sendable, Codable {
     public var uris: [String]?
     public var title: String?
     public var alert: Bool?
-    public var session: String?
     public var voice: String?
 
     public init(kind: DisplayKind? = nil, text: String? = nil, truncated: Bool? = nil,
                 blocks: [ContentBlock.BlockType]? = nil, uris: [String]? = nil, title: String? = nil,
-                alert: Bool? = nil, session: String? = nil, voice: String? = nil) {
+                alert: Bool? = nil, voice: String? = nil) {
         self.kind = kind
         self.text = text
         self.truncated = truncated
@@ -138,7 +137,6 @@ public struct CommandSummary: Equatable, Sendable, Codable {
         self.uris = uris
         self.title = title
         self.alert = alert
-        self.session = session
         self.voice = voice
     }
 
@@ -148,7 +146,6 @@ public struct CommandSummary: Equatable, Sendable, Codable {
         case .display(let params):
             kind = params.kind
             alert = params.alert
-            session = params.session
             summarize(params.content)
         case .notify(let params):
             title = params.title

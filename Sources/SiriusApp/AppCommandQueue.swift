@@ -30,11 +30,6 @@ final class AppCommandQueue: CommandQueue {
                 return accepted
                     ? .success(.delivered)
                     : .failure(RPCError(.queueFull, "Queue full", data: ErrorData(method: .display)))
-            case .aside:
-                // Asides were removed; an agent whose instructions still
-                // name the kind is told what to do instead.
-                return .failure(RPCError(.unknownDisplayKind, DisplayKind.asideRemoved,
-                                         data: ErrorData(method: .display, kind: params.kind.rawValue)))
             case .dialog:
                 // Validation rejects this with KIND_NOT_AVAILABLE before it gets here.
                 return .failure(RPCError(.kindNotAvailable, "Kind not available",

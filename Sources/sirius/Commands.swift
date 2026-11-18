@@ -52,9 +52,6 @@ struct Display: ParsableCommand {
     @Flag(help: "toast only: takes the place of this agent's toast instead of queueing behind it.")
     var replace = false
 
-    @Option(help: "aside only: open beside an item, by the anchor on it in a message's <context>.")
-    var anchor: String?
-
     @Flag(help: "Read the content from stdin as JSON: a string or an array of content blocks.")
     var json = false
 
@@ -63,6 +60,7 @@ struct Display: ParsableCommand {
 
     func validate() throws {
         // Cheap and offline; the app still validates everything.
+        guard kind != DisplayKind.removedAside else { throw ValidationError(DisplayKind.asideRemoved) }
         guard DisplayKind(rawValue: kind) != nil else {
             throw ValidationError("unknown display kind \"\(kind)\"; expected one of: "
                 + DisplayKind.allCases.map(\.rawValue).joined(separator: ", "))
@@ -74,7 +72,6 @@ struct Display: ParsableCommand {
         var params: [String: JSONValue] = ["kind": .string(kind), "content": try content(text, json: json)]
         if alert { params["alert"] = .bool(true) }
         if replace { params["replace"] = .bool(true) }
-        if let anchor { params["anchor"] = .string(anchor) }
         try send(.display, params)
     }
 }

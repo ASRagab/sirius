@@ -60,6 +60,20 @@ final class EncodingTests: XCTestCase {
 }
 
 final class ReplyLeniencyTests: XCTestCase {
+    // An agent whose instructions still name the removed aside kind is
+    // told what to do instead; any other unknown kind is only named.
+    func testTheRemovedAsideKindSaysWhatToDoInstead() {
+        XCTAssertThrowsError(try validateDisplay(["kind": .string("aside"), "content": .string("Compare the two designs")])) { error in
+            let error = error as? RPCError
+            XCTAssertEqual(error?.code, .unknownDisplayKind)
+            XCTAssertEqual(error?.message, DisplayKind.asideRemoved)
+        }
+        XCTAssertThrowsError(try validateDisplay(["kind": .string("banner"), "content": .string("hi")])) { error in
+            XCTAssertEqual((error as? RPCError)?.message, "Unknown display kind \"banner\"")
+        }
+        XCTAssertNil(DisplayKind(rawValue: "aside"))
+    }
+
     func testUnknownCodeAndDataStillReadAsARejection() throws {
         let frame = #"{"jsonrpc":"2.0","sirius":1,"id":"1","error":{"code":-31999,"message":"new","data":{"limit":"maxFuture","value":1.5,"method":"display"}}}"#
         let reply = try Reply.parse(Data(frame.utf8))

@@ -90,7 +90,8 @@ func validateDisplay(_ params: [String: JSONValue]) throws -> DisplayParams {
         throw invalid(method, "kind must be a string")
     }
     guard let kind = DisplayKind(rawValue: name) else {
-        throw RPCError(.unknownDisplayKind, "Unknown display kind \"\(name)\"",
+        throw RPCError(.unknownDisplayKind,
+                       name == DisplayKind.removedAside ? DisplayKind.asideRemoved : "Unknown display kind \"\(name)\"",
                        data: ErrorData(method: method, kind: name))
     }
     guard let accepts = kind.accepts else {
@@ -101,29 +102,11 @@ func validateDisplay(_ params: [String: JSONValue]) throws -> DisplayParams {
     if alert != nil, kind != .toast { throw invalid(method, "alert applies to toast only", kind: name) }
     let replace = try optionalBool(params["replace"], "replace", method)
     if replace != nil, kind != .toast { throw invalid(method, "replace applies to toast only", kind: name) }
-    let session = try optionalString(params["session"], "session", method)
-    if session != nil, kind != .aside { throw invalid(method, "session applies to aside only", kind: name) }
-    if session != nil { throw invalid(method, "session is not available yet", kind: name) }
-    let anchor = try optionalString(params["anchor"], "anchor", method)
-    if let anchor {
-        guard kind == .aside else { throw invalid(method, "anchor applies to aside only", kind: name) }
-        // Shape only: whether it names anything is the app's to say, and an
-        // anchor that names nothing still opens the aside.
-        guard !anchor.isEmpty, anchor.utf8.count <= 64,
-              anchor.utf8.allSatisfy({ ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x61 && $0 <= 0x7A) })
-        else { throw invalid(method, "anchor must be a handle from a message's context", kind: name) }
-    }
-
     let content = try validateContent(params["content"], method: method, kind: name, accepts: accepts)
     if kind == .toast {
         try limit(ContentBlock.joinedText(content).codePoints, Limits.maxToastChars, .maxToastChars, method)
     }
-    if kind == .aside {
-        guard !isBlank(ContentBlock.joinedText(content)) else { throw invalid(method, "an aside needs a brief", kind: name) }
-        try limit(ContentBlock.joinedText(content).codePoints, Limits.maxAsideChars, .maxAsideChars, method)
-    }
-    return DisplayParams(kind: kind, content: content, alert: alert, replace: replace, session: session,
-                         anchor: anchor)
+    return DisplayParams(kind: kind, content: content, alert: alert, replace: replace)
 }
 
 func validateNotify(_ params: [String: JSONValue]) throws -> NotifyParams {

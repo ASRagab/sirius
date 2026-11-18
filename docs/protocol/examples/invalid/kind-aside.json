@@ -1,5 +1,5 @@
 {
-  "description": "session on an aside is not built",
+  "description": "The aside kind, removed on 2026.11.17, is an unknown display kind",
   "frame": {
     "jsonrpc": "2.0",
     "sirius": 1,
@@ -7,12 +7,11 @@
     "method": "display",
     "params": {
       "kind": "aside",
-      "content": "hi",
-      "session": "s"
+      "content": "Compare the two retry designs and recommend one"
     }
   },
   "expect": {
-    "error": -32602,
+    "error": -32002,
     "id": "1",
     "data": {
       "kind": "aside",
