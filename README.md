@@ -56,7 +56,7 @@ scripts/dev-install.sh      # build, sign, and install Sirius.app
 
 ## 6. Bring your own harness (BYOH)
 
-A harness is an agent CLI that can hold a session without its terminal UI: Claude Code, Codex and Muse Code today. Each one is an agent in Sirius, described by `~/.agents/registry/<agent>/agent.json`, whose `harness` field picks the adapter that runs it. The adapter is the only code written per harness. The composer, dictation, toasts, asides and the log are the same for all of them.
+A harness is an agent CLI that can hold a session without its terminal UI: Claude Code, Codex and Muse Code today. Each one is an agent in Sirius, described by `~/.agents/registry/<agent>/agent.json`, whose `harness` field picks the adapter that runs it. The adapter is the only code written per harness. The composer, dictation, toasts and the log are the same for all of them.
 
 Adding one is a change to the source, in five steps:
 

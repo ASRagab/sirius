@@ -12,7 +12,6 @@ The wire contract is [protocol/proto.ts](protocol/proto.ts). Each part below is 
 2. [Components](#2-components)
 3. [User to agent](#3-user-to-agent)
 4. [Agent to user](#4-agent-to-user)
-   - [4.1 — Asides](#41--asides)
 5. [Adapters](#5-adapters)
    - [5.1 — Claude Code, warm headless](#51--claude-code-warm-headless)
    - [5.2 — Codex, app-server](#52--codex-app-server)
@@ -45,7 +44,7 @@ Two directions, unified differently:
 - **Agent to user** is one protocol for every agent (agreed). The agent runs `sirius display …` or calls the `display` tool on `sirius-mcp`. The helper sends one JSON-RPC request to the agent's socket and returns the app's receipt.
 - **User to agent** is one Message for every agent, carried however that agent starts a turn. That translation is the adapter's whole job.
 
-The agent's own output stream is never shown to the user (agreed). The adapter reads it only for the resume id, the end of the turn and failure. The one exception is an aside (§4.1): a fork of the agent's session whose text is the reply, streamed into the aside's window. The main session keeps the rule.
+The agent's own output stream is never shown to the user (agreed). The adapter reads it only for the resume id, the end of the turn and failure.
 
 ## 2. Components
 
@@ -100,25 +99,9 @@ Working memory is `~/.agents/WMEM.md`, pointers to what the user refers to, whic
 5. The app logs the command against the agent's current message, and the presenter shows it when its turn in the queue comes.
 6. The helper exits 0 on a result, 1 on an error, 3 when Sirius isn't running, 4 when the outcome is unknown. It never retries.
 
-### 4.1 — Asides
-
-An aside is a side conversation in a window of its own, for an answer too long for a toast or one that takes back-and-forth. It is a fork of the agent's session, so it starts with everything the agent knew and from there is its own: nothing said in it reaches the main session, and its turns neither wait for the main queue nor hold it up.
-
-1. It opens two ways. The user sends from the composer with ⌘Return, and what they typed is the first turn. Or the agent answers a message with `display` kind `aside` and a short brief; the fork already holds the user's message, so the brief stands in for a first turn.
-2. `AgentHost.openAside` builds a second adapter for the same registration with `AsideOptions`, and `AsideSession` opens it with `SessionRequest(resume: <the agent's session>, fork: true)`. The fork is taken whether the main session is idle or mid-turn.
-3. The aside's adapter runs under the aside instructions in place of the agent's own, gets no `SIRIUS_SOCKET`, no helpers and no `sirius-mcp`, and hands the turn to `AsideOptions.onEvent` as the harness streams it, as `TurnEvent`s: runs of text, reasoning, tool calls and notices, one shape for every harness. The window renders the text as Markdown, commentary dimmed, with one line for what the agent is doing. The aside keeps the agent's other tools.
-4. Replies typed in the window go to the fork, one turn at a time.
-5. Closing the window ends the aside: its harness stops, what was said is written to `agents/<agent>/asides/<id>.md`, and the main session is left a note (`AgentTurnQueue.note`) that rides its next message from the user, saying what the aside was about and where it is kept.
-
-| | Fork | Stream |
-|---|---|---|
-| Claude Code | `--resume <session> --fork-session` | `--include-partial-messages`, `stream_event` content blocks |
-| Codex | `thread/fork {threadId, excludeTurns}` | `item/*` notifications of the aside's thread; commentary is marked |
-| Muse Code | `session/fork {sessionId}`, then `session/setApprovalMode allowAll` | `item/*` notifications; commentary is marked when its run ends |
-
 ## 5. Adapters
 
-Every adapter does the same five jobs and nothing else. It never shows anything to the user, parses the agent's answer, or treats attachments per agent. An aside's adapter (§4.1) is the exception to the middle rule: it hands the answer's text on as it streams.
+Every adapter does the same five jobs and nothing else. It never shows anything to the user, parses the agent's answer, or treats attachments per agent.
 
 | Job | Claude Code, headless | Codex | Claude Code, live session |
 |---|---|---|---|
@@ -160,8 +143,7 @@ Plan §7 ships it at launch; the schema's `harness` field has no value for it ye
 | `~/.agents/WMEM.md`, `~/.agents/wmem.log` | Working memory and its use log | seeded by the app, then `wmem` |
 | `~/.agents/toasts.md` | The toast rule every agent's instructions include with `@~/.agents/toasts.md`, one copy for all | the app, which rewrites it from its template whenever the two differ |
 | `~/.agents/gc.md`, `~/.agents/registry/<agent>/gc.md` | The working-memory cleanup prompt, shared and per agent | seeded by the app (shared), then the user |
-| `~/Library/Application Support/Sirius/agents/<agent>/state.json` | The resume id, and notes waiting for the agent's next turn | app |
-| `~/Library/Application Support/Sirius/agents/<agent>/asides/<id>.md` | What was said in a closed aside | app |
+| `~/Library/Application Support/Sirius/agents/<agent>/state.json` | The resume id | app |
 | `~/Library/Application Support/Sirius/agents/<agent>/log.jsonl` | Messages, commands, turn ends, consolidations, failures | app |
 | `~/Library/Application Support/Sirius/agents/<agent>/attachments/<message>/` | Files sent with that message | app |
 | `$TMPDIR/sirius/<agent>.sock` | The agent's socket, folder mode 0700 | app |
@@ -178,12 +160,12 @@ One Swift package.
 | `SiriusProtocol` | Swift types for proto.ts: requests, results, errors, content blocks, registration. Validation. No IO. | nothing |
 | `SiriusClient` | The socket client both helpers share. Connect, write one frame, read one, map to an exit code or tool result. | Protocol |
 | `SiriusMemory` | WMEM.md's format and the `wmem` commands. | nothing |
-| `SiriusCore` | Registry, log, socket server, queue, aside sessions, the working-memory check. | Protocol, Memory |
+| `SiriusCore` | Registry, log, socket server, queue, the working-memory check. | Protocol, Memory |
 | `SiriusAdapters` | One file per adapter, the five jobs. | Core |
 | `sirius-mcp` | The MCP helper. | Protocol, Client |
 | `sirius` | The CLI helper. | Protocol, Client |
 | `wmem` | The working-memory helper. | Memory |
-| `SiriusApp` | Sirius.app: composer, presenter, aside windows, setup. Installed as `Contents/MacOS/Sirius`. | Core, Adapters |
+| `SiriusApp` | Sirius.app: composer, presenter, setup. Installed as `Contents/MacOS/Sirius`. | Core, Adapters |
 
 The app and the `sirius` CLI are separate executables, so the CLI the agents run stays small and free of AppKit. `scripts/build-app.sh` builds all four and signs them into Sirius.app, with the helpers in `Contents/Helpers/`.
 
