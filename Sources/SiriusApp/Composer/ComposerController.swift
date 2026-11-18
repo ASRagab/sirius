@@ -52,6 +52,10 @@ final class ComposerController {
     // rule for the reads its notices cause (startWatch).
     private var watch: Task<Void, Never>?
     private var rereads = AmbientRereads()
+    // The monitor of the user's input to the app behind, while the line
+    // shows context Sirius read itself (startInputWatch).
+    private var inputWatch: Any?
+    private var inputSettle: Task<Void, Never>?
     // Opens a watch on a provider. Replaced in tests.
     var watchContext: @Sendable (AmbientProvider) -> AsyncStream<AmbientWatchEvent> = { provider in
         AmbientClient(provider: provider).watch()
@@ -262,14 +266,20 @@ final class ComposerController {
     //    read again, as at any other time.
     //  - the composer gets the keys back, which is the user returning
     //    from the app.
+    //  - for an app Sirius reads itself (AccessibilityReader), which has
+    //    no watch to offer: the user let go of the mouse button or a key
+    //    in that app. A selection there changes no other way, so the app
+    //    is read again a moment after each release (startInputWatch).
     // One watch, on the provider the opening read. It ends when the
     // composer closes, sends, or has its context removed. If it is lost
     // after it was held, it is opened once more and then left; the line
     // keeps what it last read and nothing is shown to the user.
     private func startWatch(on provider: AmbientProvider) {
         stopWatch()
-        // A tree Sirius read itself has no endpoint to watch.
-        guard !provider.isNative, AmbientClient.offersWatch(provider.descriptor.protocol) else { return }
+        // A tree Sirius read itself has no endpoint to watch; the user's
+        // own input to the app says when to read it again.
+        if provider.isNative { return startInputWatch(pid: provider.descriptor.pid) }
+        guard AmbientClient.offersWatch(provider.descriptor.protocol) else { return }
         let open = watchContext
         let app = provider.descriptor.app.id
         watch = Task { [weak self] in
@@ -292,9 +302,37 @@ final class ComposerController {
         }
     }
 
+    // How long after a release the app is read: long enough for it to
+    // have settled its selection.
+    static let inputSettleDelay: Duration = .milliseconds(90)
+
+    // Reads the app again after each mouse-up or key-up that went to it.
+    // A global monitor sees only other apps' events, so typing in the
+    // composer never counts, and nothing runs while the user does nothing.
+    // Releases close together make one read (the settle task is replaced),
+    // and reads are one at a time (AmbientRereads).
+    private func startInputWatch(pid: Int32) {
+        inputWatch = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp, .keyUp]) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return }
+                self.inputSettle?.cancel()
+                self.inputSettle = Task { [weak self] in
+                    try? await Task.sleep(for: Self.inputSettleDelay)
+                    guard !Task.isCancelled else { return }
+                    self?.contextChanged()
+                }
+            }
+        }
+        if inputWatch != nil { SiriusLog.composer.info("following input to pid \(pid) for context") }
+    }
+
     private func stopWatch() {
         watch?.cancel()
         watch = nil
+        if let inputWatch { NSEvent.removeMonitor(inputWatch) }
+        inputWatch = nil
+        inputSettle?.cancel()
+        inputSettle = nil
         rereads.reset()
     }
 
