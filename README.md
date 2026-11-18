@@ -7,9 +7,11 @@
 
 # Sirius
 
-Talk to your agents from anywhere on your Mac. Hold `fn` and speak, or press ⌘⇧J to type, and your agent gets to work in its own folder. Replies come back as a toast, a notification or a spoken line.
+Sirius is the first ambient intelligence for macOS.
 
-Sirius is bring your own harness (BYOH): it has no model of its own and drives the agent CLI you already use, with your account and settings. Claude Code, ChatGPT / Codex and Muse Code work out of the box; others are one adapter away ([docs/byoh.md](docs/byoh.md)).
+Hold `fn` and speak, or press ⌘⇧J to type, and your agent gets to work in its own folder. Replies come back as a toast, a notification or a spoken line.
+
+We believe the future is multi-agent, so Sirius is bring your own harness (BYOH): it has no model of its own and drives the agent CLI you already use, with your account and settings. Claude Code, ChatGPT / Codex and Muse Code work out of the box; others are one adapter away ([docs/byoh.md](docs/byoh.md)).
 
 [Download Sirius](https://trysirius.app/download) for macOS 14+ on Apple Silicon.
 
