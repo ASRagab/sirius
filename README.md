@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/assets/icon.png" width="128" alt="Sirius">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/icon-light.png">
+    <img src="docs/assets/icon.png" width="128" alt="Sirius">
+  </picture>
 </p>
 
 # Sirius
