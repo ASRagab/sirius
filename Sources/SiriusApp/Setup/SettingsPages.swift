@@ -441,6 +441,12 @@ private struct ContextPane: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    PillRow("Warn before sending from sensitive apps", // TODO(copy): copy
+                            note: "Mail, Chrome and apps that say so. Asks again before sending.") { // TODO(copy): copy
+                        PillSwitch(label: "Warn before sending from sensitive apps", isOn: Binding(
+                            get: { context.warns }, set: { context.warns = $0 }))
+                    }
+                    .disabled(!context.enabled)
                 }
                 separator
                 VStack(alignment: .leading, spacing: 10) {
@@ -453,16 +459,9 @@ private struct ContextPane: View {
                     }
                     ForEach(context.providers) { provider in
                         ContextAppRow(bundleID: provider.id, name: provider.name, path: provider.path,
-                                      note: context.isSensitive(provider.id) ? Self.sensitiveNote : nil, isOn: Binding(
+                                      sensitive: context.isSensitive(provider.id), isOn: Binding(
                             get: { context.isOn(provider) }, set: { context.set(provider, on: $0) }))
                     }
-                }
-                .disabled(!context.enabled)
-                separator
-                PillRow("Warn before sending from sensitive apps", // TODO(copy): copy
-                        note: "Mail, Chrome and apps that say so. Asks again before sending.") { // TODO(copy): copy
-                    PillSwitch(label: "Warn before sending from sensitive apps", isOn: Binding(
-                        get: { context.warns }, set: { context.warns = $0 }))
                 }
                 .disabled(!context.enabled)
                 separator
@@ -472,7 +471,7 @@ private struct ContextPane: View {
                             note: "Sirius reads what is open and selected in these apps. Needs Accessibility.")
                     ForEach(NativeApps.all, id: \.id) { app in
                         ContextAppRow(bundleID: app.id, name: app.name,
-                                      note: app.sensitive ? Self.sensitiveNote + " Off unless you turn it on." : nil, // TODO(copy): copy
+                                      sensitive: app.sensitive,
                                       isOn: Binding(get: { context.isOn(app) }, set: { context.set(app, on: $0) }))
                     }
                 }
@@ -488,8 +487,6 @@ private struct ContextPane: View {
         // The scroller sits at the window's edge, in the page's own margin.
         .padding(.trailing, -32)
     }
-
-    static let sensitiveNote = "Sensitive: Sirius warns before sending." // TODO(copy): copy
 
     // A thin line between the page's sections.
     private var separator: some View {
@@ -509,7 +506,8 @@ private struct ContextAppRow: View {
     let bundleID: String
     let name: String
     var path: String?
-    let note: String?
+    // Sirius warns before sending from it: a short label by the switch.
+    let sensitive: Bool
     @Binding var isOn: Bool
     @Environment(\.isEnabled) private var isEnabled
 
@@ -523,18 +521,17 @@ private struct ContextAppRow: View {
                 }
             }
             .frame(width: 22, height: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(name)
-                if let note {
-                    Text(note).font(.caption).foregroundStyle(.secondary)
-                }
-            }
+            Text(name)
             Spacer(minLength: 12)
+            if sensitive {
+                Text("Sensitive") // TODO(copy): copy
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .help("Sirius asks before sending context from this app.") // TODO(copy): copy
+            }
             PillSwitch(label: name, isOn: $isOn)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.04)))
+        .padding(.vertical, 2)
         .opacity(isEnabled ? 1 : 0.5)
     }
 
