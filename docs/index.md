@@ -6,6 +6,7 @@ Last updated: `2026.11.09`
 
 | Document | Contents |
 |---|---|
+| [manual/index.md](manual/index.md) | The user manual, also bundled in the app as **Sirius Manual** |
 | [architecture.md](architecture.md) | The app, the helpers and the adapters, and how a message and a reply flow through them |
 | [protocol/proto.ts](protocol/proto.ts) | The wire contract: commands, content, errors, the registration and the Message. Draft 1 |
 | [dictation.md](dictation.md) | Dictation as built: fn to an agent, ⌃fn to paste, the ParrotCore engine and permissions |

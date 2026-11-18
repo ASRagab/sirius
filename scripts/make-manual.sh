@@ -2,7 +2,7 @@
 # Makes the PDF of the user manual from its Markdown, with Paper.
 #   scripts/make-manual.sh [out.pdf]     → build/Sirius Manual.pdf
 #
-# The manual is packaging/agent/manual/: index.md first, then any other .md
+# The manual is docs/manual/: index.md first, then any other .md
 # beside it in name order, exported as one document by `paper export`
 # (Paper's command-line tool; no window opens).
 #
@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SOURCE=packaging/agent/manual
+SOURCE=docs/manual
 OUT="${1:-build/Sirius Manual.pdf}"
 
 if ! command -v paper >/dev/null; then

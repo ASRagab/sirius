@@ -210,7 +210,7 @@ public enum Instructions {
         return wrote
     }
 
-    // The user manual: packaging/agent/manual in the app's templates, index.md
+    // The user manual: docs/manual, copied to agent/manual in the app's templates, index.md
     // with any other sections and the PDF beside it. Agents are pointed at a
     // copy at a path that is the same on every Mac (Sirius's agents folder in
     // Application Support, `folder` here), since the app itself may be
