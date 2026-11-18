@@ -431,18 +431,14 @@ private struct ContextPane: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                SettingsGroup("Ambient Context") { // TODO(copy): copy
+                SettingsGroup("Ambient Context", // TODO(copy): copy
+                              // TODO(copy): copy
+                              note: "Sends what you have open and selected in the app in front with your message.") {
                     PillRow("Use ambient context") { // TODO(copy): copy
                         PillSwitch(label: "Use ambient context", isOn: Binding(
                             get: { context.enabled }, set: { context.enabled = $0 }))
                     }
-                    // TODO(copy): copy
-                    Text("What you have open and selected in the app in front goes with your message. The composer shows it before you send.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    PillRow("Warn before sending from sensitive apps", // TODO(copy): copy
-                            note: "Mail, Chrome and apps that say so. Asks again before sending.") { // TODO(copy): copy
+                    PillRow("Warn before sending from sensitive apps") { // TODO(copy): copy
                         PillSwitch(label: "Warn before sending from sensitive apps", isOn: Binding(
                             get: { context.warns }, set: { context.warns = $0 }))
                     }

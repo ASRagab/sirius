@@ -106,16 +106,25 @@ struct PillRow<Control: View>: View {
 // A titled group of rows, such as Keys.
 struct SettingsGroup<Content: View>: View {
     let title: String
+    // One sentence under the title saying what the page is for.
+    var note: String?
     @ViewBuilder let content: () -> Content
 
-    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
+    init(_ title: String, note: String? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
+        self.note = note
         self.content = content
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title3.weight(.medium))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.title3.weight(.medium))
+                if let note {
+                    Text(note).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             content()
         }
     }

@@ -278,7 +278,8 @@ extension AgentChoice {
     // id, and one that is not here still shows in the menu. Checked
     // 2026.11.18: Claude's ids are Anthropic's current ones; Codex's are
     // the slugs in codex-cli 0.159.1's own list, and gpt-6.2-astra from a
-    // working config. Muse's are not known, so it has none.
+    // working config. Muse's, Cursor's and Antigravity's are not known, so
+    // they have none.
     static func models(_ harness: AgentRegistration.Harness) -> [(id: String, name: String)] {
         switch harness {
         case .claudeCode: [
@@ -294,7 +295,7 @@ extension AgentChoice {
             ("gpt-6-sol", "GPT-6 Sol"),
             ("gpt-6-luna", "GPT-6 Luna"),
         ]
-        case .museCode: []
+        case .museCode, .cursor, .antigravity: []
         }
     }
 
