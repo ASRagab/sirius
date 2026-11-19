@@ -14,6 +14,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let openOnboarding: (_ agents: Bool) -> Void
     // "Open manual" with a small raised ↗, as a superscript, in the menu's
     // own font.
+    /// The silver star at 22 pt, as a template image so macOS tints it for a light, dark or highlighted bar,
+    /// as Paper does with its enso. Both scales are in `images/`; nil when the bundle lacks them.
+    static var menuBarImage: NSImage? {
+        let image = NSImage(size: NSSize(width: 22, height: 22))
+        for name in ["menubar-star", "menubar-star@2x"] {
+            guard let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "images"),
+                  let rep = NSBitmapImageRep(data: (try? Data(contentsOf: url)) ?? Data()) else { continue }
+            rep.size = image.size
+            image.addRepresentation(rep)
+        }
+        guard !image.representations.isEmpty else { return nil }
+        image.isTemplate = true
+        image.accessibilityDescription = "Sirius"
+        return image
+    }
+
     static var manualTitle: NSAttributedString {
         let font = NSFont.menuFont(ofSize: 0)
         // A full space before the arrow, at the title's size, so it does
@@ -68,8 +84,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // shows "Check for updates…" only once they run.
         Updater.start()
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        // TODO(copy): the menu-bar icon.
-        item.button?.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Sirius")
+        item.button?.image = Self.menuBarImage
+            ?? NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Sirius")
         let menu = NSMenu()
         menu.delegate = self
         debugItems = makeDebugItems()
