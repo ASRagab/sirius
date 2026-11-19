@@ -983,6 +983,8 @@ private struct MarkView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .foregroundColor(pillBlue)
+                    // Drawn flat first, or the window stretches it wide (LaunchSparkle).
+                    .drawingGroup()
             } else {
                 Image(nsImage: image)
                     .resizable()
@@ -1051,6 +1053,10 @@ private struct LaunchSparkle: View {
         if let image = SiriusMark.mark ?? SiriusMark.silver {
             Image(nsImage: image).renderingMode(.template).resizable().aspectRatio(contentMode: .fit)
                 .frame(width: Self.size * Self.starScale, height: Self.size * Self.starScale)
+                // Drawn flat first: composited live, the template star came
+                // out about 1.7 times wider than tall (offscreen snapshots
+                // drew it square).
+                .drawingGroup()
         } else {
             Image(systemName: "sparkle").font(.system(size: Self.size, weight: .medium))
         }
