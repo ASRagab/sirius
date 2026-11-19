@@ -252,7 +252,8 @@ extension AgentChoice {
     var settingsSummary: String {
         if !looking, executable == nil { return "Not installed" } // TODO(copy): copy
         guard let root else { return "No workspace yet" } // TODO(copy): copy
-        let model = model ?? "Default model" // TODO(copy): copy
+        // The model by its maker's name, as the Model menu shows it.
+        let model = model.map { modelLabel($0) } ?? "Default model" // TODO(copy): copy
         let effort = effort.map { "\(Self.effortLabel($0)) effort" } ?? "Default effort" // TODO(copy): copy
         return [(root as NSString).lastPathComponent, model, effort].joined(separator: " · ")
     }

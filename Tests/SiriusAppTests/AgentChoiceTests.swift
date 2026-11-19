@@ -88,7 +88,7 @@ final class AgentChoiceSettingsTests: XCTestCase {
     func testSummaryNamesWorkspaceModelAndEffort() {
         XCTAssertEqual(registered(.claudeCode).settingsSummary, "notes · Default model · Low effort")
         XCTAssertEqual(registered(.claudeCode, model: "claude-opus-5-5", effort: "xhigh").settingsSummary,
-                       "notes · claude-opus-5-5 · Extra high effort")
+                       "notes · Opus 5.5 · Extra high effort")
         XCTAssertEqual(registered(.codex, effort: nil).settingsSummary, "notes · Default model · Default effort")
     }
 

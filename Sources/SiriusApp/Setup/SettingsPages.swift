@@ -262,11 +262,15 @@ private struct SettingsAgentRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(hovering ? 0.07 : 0.04)))
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            // A plain row, as the Context page's apps; a faint fill only
+            // under the pointer, reaching into the margin so the row's
+            // content stays aligned with the page.
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(hovering ? 0.06 : 0)))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, -10)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
