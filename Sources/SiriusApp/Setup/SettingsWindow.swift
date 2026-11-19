@@ -56,6 +56,9 @@ final class SettingsWindow {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.size),
                               styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
+        // Always the app's dark sky, whatever the system's appearance, as
+        // the onboarding; text and controls follow.
+        window.appearance = NSAppearance(named: .darkAqua)
         // Never smaller than the size the panes were laid out for; larger
         // gives the rows more room and Context's list more height.
         window.contentMinSize = Self.size

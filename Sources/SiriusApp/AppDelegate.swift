@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Sparkle's scheduled checks, before the menu, which
-        // shows "Check for Updates…" only once they run.
+        // shows "Check for updates…" only once they run.
         Updater.start()
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         // TODO(copy): the menu-bar icon.
@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let setup = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
         setup.target = self
         menu.addItem(setup)
-        let updates = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
+        let updates = NSMenuItem(title: "Check for updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
         updates.target = self
         updates.isHidden = !Updater.isRunning
         menu.addItem(.separator())

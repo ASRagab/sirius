@@ -191,7 +191,7 @@ Where Sirius keeps things:
 
 ## 10. Updates
 
-Sirius checks for a new version once a day and tells you when one is ready. It installs when you click Install. **Check for Updates…** in the menu checks now.
+Sirius checks for a new version once a day and tells you when one is ready. It installs when you click Install. **Check for updates…** in the menu checks now.
 
 Sirius is signed and notarized, so the permissions you allowed stay allowed after an update.
 

@@ -19,7 +19,7 @@ enum Updater {
     private static let reminders = UpdateReminders()
     private static let localCheck = LocalCheck()
 
-    // True once Sparkle started. The menu shows "Check for Updates…" only then.
+    // True once Sparkle started. The menu shows "Check for updates…" only then.
     static var isRunning: Bool { controller != nil }
 
     // Starts Sparkle's scheduled checks. Does nothing, with one log line,
@@ -48,7 +48,7 @@ enum Updater {
             + "every \(Int(controller.updater.updateCheckInterval / 3600))h")
     }
 
-    // "Check for Updates…" from the menu.
+    // "Check for updates…" from the menu.
     static func checkForUpdates() {
         guard let controller else { return }
         // An accessory app is never frontmost; without this the update
