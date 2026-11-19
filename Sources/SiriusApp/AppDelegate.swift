@@ -14,10 +14,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let openOnboarding: (_ agents: Bool) -> Void
     // "Open manual" with a small raised ↗, as a superscript, in the menu's
     // own font.
-    /// The silver star at 22 pt, as a template image so macOS tints it for a light, dark or highlighted bar,
+    /// The silver star at 19 pt, as a template image so macOS tints it for a light, dark or highlighted bar,
     /// as Paper does with its enso. Both scales are in `images/`; nil when the bundle lacks them.
     static var menuBarImage: NSImage? {
-        let image = NSImage(size: NSSize(width: 22, height: 22))
+        let image = NSImage(size: NSSize(width: 19, height: 19))
         for name in ["menubar-star", "menubar-star@2x"] {
             guard let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "images"),
                   let rep = NSBitmapImageRep(data: (try? Data(contentsOf: url)) ?? Data()) else { continue }
