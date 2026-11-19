@@ -284,6 +284,19 @@ private struct AgentDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            backButton
+            ScrollView {
+                page
+                    // The page's margin, given back inside the scroll view
+                    // so the scroller sits at the window's edge.
+                    .padding(.trailing, 32)
+            }
+            .scrollIndicators(.visible)
+            .padding(.trailing, -32)
+        }
+    }
+
+    private var backButton: some View {
             Button { model.back() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 13, weight: .semibold))
@@ -295,6 +308,10 @@ private struct AgentDetail: View {
             .help("Agents") // TODO(copy): copy
             .accessibilityLabel("Back to Agents") // TODO(copy): copy
             .padding(.top, -28)
+    }
+
+    private var page: some View {
+        VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     AgentMark(harness: agent.harness, size: 18, ink: .primary)
@@ -645,6 +662,10 @@ private struct FolderChip: View {
             HStack(spacing: 6) {
                 Image(systemName: current ? "folder.fill" : "folder").font(.system(size: 11))
                 Text((folder as NSString).lastPathComponent).font(.system(size: 12))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 200, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .foregroundStyle(current ? .primary : .secondary)
             .padding(.horizontal, 12)

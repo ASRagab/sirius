@@ -116,6 +116,17 @@ final class TrustedFoldersTests: XCTestCase {
 
     // MARK: Filtering and order
 
+    // The Codex app's folder per chat is trusted by Codex but is no project.
+    func testAHarnessesOwnChatFoldersAreNeverUsed() {
+        let reader = TrustedFolders(home: "/Users/u", now: { Date() }, isDirectory: { _ in true }, temporaryPrefixes: [])
+        XCTAssertEqual(reader.rank([
+            .init(path: "/Users/u/Documents/Codex/2026-09-26/would-you-see-if-you-can"),
+            .init(path: "/Users/u/Documents/Codex"),
+            .init(path: "/Users/u/Documents/Codexes/app"),
+            .init(path: "/Users/u/Documents/humanitas"),
+        ]).sorted(), ["/Users/u/Documents/Codexes/app", "/Users/u/Documents/humanitas"])
+    }
+
     func testTemporaryFoldersAreNeverUsed() throws {
         let reader = TrustedFolders(home: home.path, now: { Date() }, isDirectory: { _ in true })
         XCTAssertEqual(reader.rank([.init(path: "/private/tmp/x"), .init(path: "/Users/u/work")]), ["/Users/u/work"])

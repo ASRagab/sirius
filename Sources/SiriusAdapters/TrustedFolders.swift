@@ -110,7 +110,20 @@ public struct TrustedFolders: Sendable {
     func isUsable(_ path: String) -> Bool {
         guard path.hasPrefix("/"), path != "/", path != (home as NSString).standardizingPath else { return false }
         if Self.isTemporary(path, prefixes: temporary) { return false }
+        if isScratch(path) { return false }
         return isDirectory(path)
+    }
+
+    // Folders a harness makes for itself, one per chat, which it then
+    // trusts: the Codex app's ~/Documents/Codex/<date>/<chat>. None is
+    // a project.
+    public static let scratchRoots = ["Documents/Codex"]
+
+    func isScratch(_ path: String) -> Bool {
+        Self.scratchRoots.contains { root in
+            let full = (home as NSString).appendingPathComponent(root)
+            return path == full || path.hasPrefix(full + "/")
+        }
     }
 
     public static func isTemporary(_ path: String, prefixes: [String] = temporaryPrefixes) -> Bool {

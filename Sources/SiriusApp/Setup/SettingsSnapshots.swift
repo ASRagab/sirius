@@ -90,7 +90,7 @@ extension SettingsModel {
         return SettingsModel(agents: agents, shortcuts: ShortcutsModel(compose: .compose, holdKey: .fn),
                              dictation: dictation, context: .preview(), trusted: { harness in
             harness == .cursor ? [] : ["notes", "sirius", "paper", "threads", "marina", "sync", "landing",
-                                        "inference-proto", "evals", "ops", "site"].map { "/Users/you/Projects/\($0)" }
+                                        "inference-proto", "a-very-long-project-folder-name-that-goes-on", "evals", "ops", "site"].map { "/Users/you/Projects/\($0)" }
         }, write: { _ in })
     }
 }
