@@ -367,6 +367,9 @@ private struct AgentDetail: View {
                 }
             }
             .disabled(agent.executable == nil)
+            TrustedFoldersGrid(agent: agent, model: model)
+                .padding(.top, 8)
+                .disabled(agent.executable == nil)
         }
     }
 
@@ -558,5 +561,144 @@ private struct ContextAppRow: View {
             ?? NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.bundleURL?.path
         guard let found else { return nil }
         return NSWorkspace.shared.icon(forFile: found)
+    }
+}
+
+// The folders the agent's harness already trusts, as chips: the workspace
+// lit, a click on another makes it the workspace, + chooses any folder.
+// Read from the harness's own files each time the page opens; Sirius never
+// changes what a harness trusts.
+private struct TrustedFoldersGrid: View {
+    @ObservedObject var agent: AgentChoice
+    let model: SettingsModel
+    @State private var folders: [String]?
+    @State private var showsAll = false
+    // Chips shown before "+N more".
+    static let shown = 8
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Text("Trusted folders").font(.system(size: 13, weight: .medium)) // TODO(copy): copy
+                Button {
+                    if let window = model.window { agent.chooseFolder(in: window) { model.save(agent) } }
+                } label: {
+                    Image(systemName: "plus.circle").font(.system(size: 13)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Choose another folder to work in") // TODO(copy): copy
+            }
+            Text(note).font(.caption).foregroundStyle(.secondary)
+            if let folders, !folders.isEmpty {
+                ChipFlow(spacing: 8) {
+                    ForEach(visible(folders), id: \.self) { folder in
+                        FolderChip(folder: folder, current: folder == agent.root) {
+                            agent.use(folder)
+                            model.save(agent)
+                        }
+                    }
+                    if !showsAll, folders.count > Self.shown {
+                        Button { showsAll = true } label: {
+                            Text("+\(folders.count - Self.shown) more") // TODO(copy): copy
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                                .frame(height: 28)
+                                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.25),
+                                                                style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .task(id: agent.harness) {
+            let harness = agent.harness
+            let read = model.trusted
+            folders = await Task.detached { read(harness) }.value
+        }
+    }
+
+    private var note: String {
+        let product = AgentChoice.product(agent.harness)
+        guard let folders else { return "" }
+        if folders.isEmpty {
+            return agent.harness == .cursor
+                ? "\(product) does not say which folders it trusts." // TODO(copy): copy
+                : "\(product) trusts no folders yet." // TODO(copy): copy
+        }
+        return "Folders \(product) already trusts. Click one to work there." // TODO(copy): copy
+    }
+
+    private func visible(_ folders: [String]) -> [String] {
+        showsAll ? folders : Array(folders.prefix(Self.shown))
+    }
+}
+
+private struct FolderChip: View {
+    let folder: String
+    let current: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: current ? "folder.fill" : "folder").font(.system(size: 11))
+                Text((folder as NSString).lastPathComponent).font(.system(size: 12))
+            }
+            .foregroundStyle(current ? .primary : .secondary)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(Capsule().fill(Color.primary.opacity(current ? 0.16 : 0.06)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help((folder as NSString).abbreviatingWithTildeInPath)
+    }
+}
+
+// Lays its children out left to right, wrapping to a new row when the
+// next would not fit.
+private struct ChipFlow: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let width = rows.map { $0.width }.max() ?? 0
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = [Row()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let needed = rows[rows.count - 1].indices.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
+            if needed > width, !rows[rows.count - 1].indices.isEmpty {
+                rows.append(Row())
+            }
+            var row = rows[rows.count - 1]
+            row.width = row.indices.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.indices.append(index)
+            rows[rows.count - 1] = row
+        }
+        return rows
     }
 }

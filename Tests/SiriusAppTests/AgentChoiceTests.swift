@@ -60,6 +60,21 @@ final class AgentChoiceTests: XCTestCase {
 // What the Settings window shows of an agent and writes for it.
 @MainActor
 final class AgentChoiceSettingsTests: XCTestCase {
+    // A trusted folder's chip makes it the workspace, which the next save
+    // writes; the home folder and a missing folder are refused.
+    func testATrustedFolderBecomesTheWorkspace() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("sirius-trusted-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let claude = registered(.claudeCode)
+        claude.use(folder.path)
+        XCTAssertEqual(claude.root, folder.path)
+        XCTAssertEqual(claude.registration?.root, folder.path)
+        claude.use(NSHomeDirectory())
+        claude.use("/no/such/folder")
+        XCTAssertEqual(claude.root, folder.path)
+    }
+
     private func registered(_ harness: AgentRegistration.Harness, model: String? = nil, effort: String? = "low",
                             root: String = "/Users/u/notes") -> AgentChoice {
         let current = AgentRegistration(agent: AgentChoice.id(harness), name: AgentChoice.name(harness),

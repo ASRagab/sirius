@@ -88,7 +88,10 @@ extension SettingsModel {
         }
         let dictation = ModelRegistry.find(DictationModel.defaultID) ?? ModelRegistry.shared[0]
         return SettingsModel(agents: agents, shortcuts: ShortcutsModel(compose: .compose, holdKey: .fn),
-                             dictation: dictation, context: .preview(), write: { _ in })
+                             dictation: dictation, context: .preview(), trusted: { harness in
+            harness == .cursor ? [] : ["notes", "sirius", "paper", "threads", "marina", "sync", "landing",
+                                        "inference-proto", "evals", "ops", "site"].map { "/Users/you/Projects/\($0)" }
+        }, write: { _ in })
     }
 }
 

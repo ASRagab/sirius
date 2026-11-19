@@ -192,6 +192,13 @@ final class AgentChoice: ObservableObject, Identifiable {
 
     // The folder panel as a sheet on `window`; a home folder or the disk's
     // root is refused with an alert. `chosen` runs once a folder is taken.
+    // Works in `folder` from now on: one the harness already trusts.
+    func use(_ folder: String) {
+        guard folder != root, detector.isAcceptableRoot(folder) else { return }
+        root = folder
+        isOn = true
+    }
+
     func chooseFolder(in window: NSWindow, chosen: @escaping () -> Void = {}) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true

@@ -149,12 +149,17 @@ final class SettingsModel: ObservableObject {
     // Writes one agent.json (AgentRegistry.register in the app; a stand-in
     // in the tests), then tells the host to reload.
     private let write: (AgentRegistration) throws -> Void
+    // The folders a harness already trusts, read from its own files; never
+    // written by Sirius.
+    let trusted: @Sendable (AgentRegistration.Harness) -> [String]
     private let onSave: () -> Void
     private var forwarding: [AnyCancellable] = []
 
     init(agents: [AgentChoice], shortcuts: ShortcutsModel, dictation: TranscriptionModel,
          section: SettingsSection = .general, context: ContextSettings? = nil,
+         trusted: @escaping @Sendable (AgentRegistration.Harness) -> [String] = { TrustedFolders().folders(for: $0) },
          write: @escaping (AgentRegistration) throws -> Void, onSave: @escaping () -> Void = {}) {
+        self.trusted = trusted
         self.agents = agents
         self.shortcuts = shortcuts
         self.dictation = dictation
