@@ -29,6 +29,7 @@ uniform float uLockOff;   // how far the lockup is dropped below its mock positi
 uniform vec2 uHover;      // hover per constellation: Scorpius, Orion
 uniform float uFade;
 uniform float uWordA;
+uniform float uTitleIn;   // the wordmark's CSS entrance, 0 to 1 on its own curve; the title star grows in with it
 uniform vec4 uMet;        // meteor: start xy, angle, length
 uniform vec3 uMetT;       // meteor progress 0..1, brightness, seconds since it burnt out
 uniform vec3 uMetC;       // meteor trail tint, picked per meteor
@@ -165,11 +166,15 @@ vec3 flare(vec2 wp) {
 
 // The title star above SIRIUS: the Sirius logo, the silver star (assets/logo-star.png, cut from the master in
 // packaging/icon/silver-star.png), TLOGO world px square and centred where the mock's star was (uTStarP.xy). Its
-// glow is in the image; it is added as light, at a slow shimmer (pointLights).
+// glow is in the image; it is added as light, at a slow shimmer (pointLights). It appears with SIRIUS: faded and
+// grown from TLOGO_FROM of its size on the wordmark's own entrance (uTitleIn).
 const float TLOGO = 64.0;
+const float TLOGO_FROM = 0.4;
 vec3 titleStar(vec2 wp) {
-  vec4 s = boxTex(uTLogo, vec4(uTStarP.xy - 0.5 * TLOGO, TLOGO, TLOGO), wp);
-  return s.rgb * s.a * 1.15;
+  if (uTitleIn <= 0.0) return vec3(0);
+  float size = TLOGO * mix(TLOGO_FROM, 1.0, uTitleIn);
+  vec4 s = boxTex(uTLogo, vec4(uTStarP.xy - 0.5 * size, size, size), wp);
+  return s.rgb * s.a * 1.15 * uTitleIn;
 }
 
 // Point lights only: stars, Scorpius, the meteor and the pinned flare. Cheap enough to sample many times.
@@ -538,6 +543,10 @@ const bezier = (x1, y1, x2, y2) => (x) => {
   return f((lo + hi) / 2, y1, y2);
 };
 const panEase = bezier(0.45, 0, 0.15, 1);
+// The wordmark's own entrance (style.css: opacity and blur over 2.2 s on cubic-bezier(.2,.6,.2,1)), which the
+// title star grows in with.
+const wordCurve = bezier(0.2, 0.6, 0.2, 1);
+const WORD_IN = 2.2;
 const q = new URLSearchParams(location.search);   // review: ?pan=0..1 pins the camera, ?meteor freezes one (=o an Orionid, =r a random one; &mc=0..4 its colour; &fly lets it fly)
 const pinned = q.has("pan") ? +q.get("pan") : null;
 const panAt = (e) => (pinned ?? (reduced ? 1 : panEase(Math.min(1, Math.max(0, (e - HOLD) / PAN)))));
@@ -624,6 +633,7 @@ function frame(now) {
   gl.uniform1f(U.uTime, reduced ? 0 : t % 1000);
   gl.uniform1f(U.uLockOff, L.drop);
   gl.uniform1f(U.uWordA, settled === null ? 0 : reduced ? 1 : ease(Math.min(1, (t - settled) / TITLE)));
+  gl.uniform1f(U.uTitleIn, settled === null ? 0 : reduced ? 1 : wordCurve(Math.min(1, (t - settled) / WORD_IN)));
   gl.uniform2f(U.uHover, ...hover);
   gl.uniform1f(U.uFade, reduced ? 1 : ease(Math.min(1, e / FADE)));
   gl.uniform4f(U.uMet, met ? met.x : 0, met ? met.y : 0, met ? met.a : 0, met ? met.len : 0);
