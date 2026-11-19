@@ -985,6 +985,7 @@ private struct MarkView: View {
                     .foregroundColor(pillBlue)
                     // Drawn flat first, or the window stretches it wide (LaunchSparkle).
                     .drawingGroup()
+                    .shadow(color: pillBlue.opacity(0.75), radius: LaunchSparkle.glow)
             } else {
                 Image(nsImage: image)
                     .resizable()
@@ -1057,6 +1058,8 @@ private struct LaunchSparkle: View {
                 // out about 1.7 times wider than tall (offscreen snapshots
                 // drew it square).
                 .drawingGroup()
+                // A soft glow in its own color, so it reads as bright as the menu-bar star.
+                .shadow(color: color.opacity(0.75), radius: Self.glow)
         } else {
             Image(systemName: "sparkle").font(.system(size: Self.size, weight: .medium))
         }
@@ -1064,6 +1067,7 @@ private struct LaunchSparkle: View {
     // The raster star's arms taper to nothing, so it is drawn larger than the
     // symbol was, overflowing the 20 pt content into the capsule's padding.
     static let starScale: CGFloat = 1.32
+    static let glow: CGFloat = 2.5
 
     var body: some View {
         let r = CGFloat(reveal)

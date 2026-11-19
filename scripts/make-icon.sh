@@ -64,7 +64,7 @@ sips -z 180 180 "$APP" --out landing/assets/apple-touch-icon.png >/dev/null
 sips -c 1060 1060 --cropOffset 92 96 "$STAR" --out "$work/star.png" >/dev/null
 sips -c 1060 1060 --cropOffset 92 96 "$INVERTED" --out "$work/inverted.png" >/dev/null
 sips -z 256 256 "$work/star.png" --out packaging/images/sirius-star.png >/dev/null
-# The same star, white, with its alpha raised 2.2 times, for tinting at small sizes (the pill, toasts).
+# The same star, white, with its alpha raised 3.4 times, for tinting at small sizes (the pill, toasts).
 cat > "$work/alpha.swift" <<'SWIFT'
 import AppKit
 let a = CommandLine.arguments, gain = CGFloat(Double(a[3])!)
@@ -78,7 +78,7 @@ for y in 0..<src.pixelsHigh { for x in 0..<src.pixelsWide {
 } }
 try! out.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: a[2]))
 SWIFT
-swift "$work/alpha.swift" packaging/images/sirius-star.png packaging/images/sirius-star-mark.png 2.2
+swift "$work/alpha.swift" packaging/images/sirius-star.png packaging/images/sirius-star-mark.png 3.4
 mkdir -p docs/assets
 sips -z 256 256 "$work/star.png" --out docs/assets/icon.png >/dev/null
 sips -z 256 256 "$work/inverted.png" --out docs/assets/icon-light.png >/dev/null
