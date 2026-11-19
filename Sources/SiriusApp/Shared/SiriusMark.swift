@@ -27,7 +27,7 @@ enum SiriusMark {
 
     // How much larger than the pill's 20 pt content the star is drawn, so it
     // fills the 46 pt capsule as the symbol it replaced did.
-    static let pillScale: CGFloat = 1.25
+    static let pillScale: CGFloat = 1
 
     static func template(_ description: String? = "Sirius") -> NSImage? {
         guard let star = (mark ?? silver)?.copy() as? NSImage else {
