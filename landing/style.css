@@ -18,13 +18,13 @@ body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antial
   transform-origin: 0 0; pointer-events: none;
 }
 .lockup > * { position: absolute; }
-.wordmark, .tagline, .download, .gh { opacity: 0; }
+.wordmark, .tagline, .download, .source, .gh { opacity: 0; }
 .wordmark { filter: blur(14px); transform: scale(1.015); transition: opacity 2.2s cubic-bezier(.2,.6,.2,1), filter 2.2s cubic-bezier(.2,.6,.2,1), transform 2.6s cubic-bezier(.2,.6,.2,1); }
-.download, .gh { transform: translateY(4px); transition: opacity 1s ease 1.5s, transform 1.2s cubic-bezier(.2,.6,.2,1) 1.5s, background .2s ease, box-shadow .25s ease; }
+.download, .source, .gh { transform: translateY(4px); transition: opacity 1s ease 1.5s, transform 1.2s cubic-bezier(.2,.6,.2,1) 1.5s, background .2s ease, box-shadow .25s ease; }
 .settled .wordmark { opacity: 1; filter: blur(0); transform: none; }
-.wordmark, .tagline, .download { margin-top: var(--drop, 0px); }  /* set by sky.js layout() */
+.wordmark, .tagline, .ctas { margin-top: var(--drop, 0px); }  /* set by sky.js layout() */
 .wordmark { scale: var(--ws, none); }  /* shrinks it about its centre on narrow screens, set by layout() */
-.settled .download, .settled .gh { opacity: 1; transform: none; }
+.settled .download, .settled .source, .settled .gh { opacity: 1; transform: none; }
 .wordmark {
   left: 0; width: 1512px; top: 368px; height: 78px; line-height: 78px;
   text-align: center; font: 500 64px/78px "Cormorant Garamond", serif;
@@ -38,33 +38,45 @@ body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antial
   color: rgba(200, 222, 255, 0.58); transition: opacity 1.8s ease 0.9s;
 }
 .settled .tagline { opacity: 1; }
-.download {
-  left: 756px; translate: -50% 0; top: 496px; height: 33.4px; padding: 0 13.9px; gap: 7px;  /* centred on the page axis whatever the label */
+/* Download and Source sit side by side, the pair centred on the page axis whatever the labels. */
+.ctas { left: 756px; translate: -50% 0; top: 496px; display: flex; gap: 10px; white-space: nowrap; }
+.download, .source {
+  position: relative; height: 33.4px; padding: 0 13.9px; gap: 7px;
   display: inline-flex; align-items: center; pointer-events: auto;
-  border-radius: 999px; text-decoration: none; color: #050506;
+  border-radius: 999px; text-decoration: none;
   font: 500 13px/16px Inter, sans-serif; letter-spacing: 0.01em;
+}
+.download {
+  color: #050506;
   background: linear-gradient(180deg, #ffffff, #d9e0eb);
   box-shadow: 0 0 0 0.5px rgba(255,255,255,.12), 0 1px 2px rgba(0,0,0,.4), 0 6px 24px rgba(120,160,255,.10), inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(0,0,0,.06);
 }
+/* Source is the quiet one: an outline on the sky, in the page's own text color. */
+.source {
+  color: var(--text-primary); background: rgba(200, 222, 255, .04);
+  box-shadow: inset 0 0 0 1px rgba(200, 222, 255, .22), 0 1px 2px rgba(0,0,0,.4);
+}
+.settled .source:hover { transition-delay: 0s; transform: translateY(-1px); background: rgba(200, 222, 255, .09); box-shadow: inset 0 0 0 1px rgba(200, 222, 255, .34), 0 2px 4px rgba(0,0,0,.4), 0 8px 32px rgba(140,180,255,.12); }
 .settled .download:hover { transition-delay: 0s; transform: translateY(-1px); box-shadow: 0 0 0 0.5px rgba(255,255,255,.2), 0 2px 4px rgba(0,0,0,.4), 0 8px 32px rgba(140,180,255,.22), inset 0 1px 0 #fff, inset 0 -1px 0 rgba(0,0,0,.06); }
 
 /* On touch and phone-sized screens Download shares the link instead (index.html) and reads "AirDrop to Mac"
    (iOS) or "Send to your Mac". It is 38 px tall with a 44 px tap target. Its sizes are CSS px divided by the
    lockup's scale. */
 @media (pointer: coarse), (max-width: 640px) {
-  .download {
-    left: 756px; top: calc(489px + 26px / var(--s)); translate: -50% 0; -webkit-tap-highlight-color: transparent;
+  .ctas { top: calc(489px + 26px / var(--s)); gap: calc(10px / var(--s)); }
+  .download, .source {
+    -webkit-tap-highlight-color: transparent;
     height: calc(38px / var(--s)); padding: 0 calc(19px / var(--s)); gap: calc(7px / var(--s)); white-space: nowrap;
     font-size: calc(13.6px / var(--s)); line-height: calc(17px / var(--s));
   }
-  .download::after { content: ""; position: absolute; inset: calc(-3px / var(--s)) 0; }  /* keeps the tap target 44 px tall */
+  .download::after, .source::after { content: ""; position: absolute; inset: calc(-3px / var(--s)) 0; }  /* keeps the tap target 44 px tall */
   .tagline { font-size: calc(14px / var(--s)); line-height: calc(20px / var(--s)); top: calc(452px + 6px / var(--s)); }
-  .download svg { width: calc(12.7px / var(--s)); height: calc(12.7px / var(--s)); }
-  .download:active { scale: .97; }
+  .download svg, .source svg { width: calc(12.7px / var(--s)); height: calc(12.7px / var(--s)); }
+  .download:active, .source:active { scale: .97; }
 }
 @media (max-height: 500px) and (pointer: coarse), (max-height: 500px) and (max-width: 640px) {
-  .download { height: calc(36px / var(--s)); font-size: calc(12.7px / var(--s)); }   /* a phone on its side */
-  .download::after { inset: calc(-4px / var(--s)) 0; }   /* tap target still 44 px */
+  .download, .source { height: calc(36px / var(--s)); font-size: calc(12.7px / var(--s)); }   /* a phone on its side */
+  .download::after, .source::after { inset: calc(-4px / var(--s)) 0; }   /* tap target still 44 px */
 }
 
 .gh {
@@ -81,4 +93,4 @@ body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antial
 }
 .label.on { opacity: .9; }
 
-@media (prefers-reduced-motion: reduce) { .wordmark, .tagline, .download, .gh { transition: none; filter: none; } }
+@media (prefers-reduced-motion: reduce) { .wordmark, .tagline, .download, .source, .gh { transition: none; filter: none; } }
