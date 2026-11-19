@@ -85,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Updater.start()
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = Self.menuBarImage
-            ?? NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Sirius")
+            ?? SiriusMark.template()
         let menu = NSMenu()
         menu.delegate = self
         debugItems = makeDebugItems()

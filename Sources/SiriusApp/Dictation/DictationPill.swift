@@ -1043,10 +1043,23 @@ private struct LaunchSparkle: View {
     static let blurRadius: CGFloat = 6
     static let startScale: CGFloat = 0.85
 
+    // The silver star as a template, tinted like the symbol it replaced; the
+    // symbol where the bundle has no star.
+    @ViewBuilder private var star: some View {
+        if let image = SiriusMark.silver {
+            Image(nsImage: image).renderingMode(.template).resizable().aspectRatio(contentMode: .fit)
+                .frame(width: Self.size * Self.starScale, height: Self.size * Self.starScale)
+        } else {
+            Image(systemName: "sparkle").font(.system(size: Self.size, weight: .medium))
+        }
+    }
+    // The raster star's arms taper to nothing, so it is drawn a little larger
+    // than the symbol to read at the same size.
+    static let starScale: CGFloat = 1.35
+
     var body: some View {
         let r = CGFloat(reveal)
-        Image(systemName: "sparkle")
-            .font(.system(size: Self.size, weight: .medium))
+        star
             .foregroundColor(color)
             .scaleEffect(Self.startScale + (1 - Self.startScale) * r)
             .blur(radius: (1 - r) * Self.blurRadius)

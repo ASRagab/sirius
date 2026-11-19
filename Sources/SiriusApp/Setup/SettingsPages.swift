@@ -92,9 +92,14 @@ private struct SettingsSidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 4) {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 30, weight: .light))
-                    .frame(height: 40)
+                Group {
+                    if let star = SiriusMark.silver {
+                        Image(nsImage: star).resizable().aspectRatio(contentMode: .fit).frame(width: 44, height: 44)
+                    } else {
+                        Image(systemName: "sparkle").font(.system(size: 30, weight: .light))
+                    }
+                }
+                .frame(height: 44)
                 Text("Sirius").font(.headline)
                 Text("Version \(model.version)") // TODO(copy): copy
                     .font(.caption)

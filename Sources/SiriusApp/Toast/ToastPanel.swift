@@ -308,7 +308,7 @@ final class ToastPanel: NSPanel, ToastSurface {
             logo.accessibilityDescription = agent
             return logo
         }
-        return NSImage(systemSymbolName: "sparkle", accessibilityDescription: agent)
+        return SiriusMark.template(agent)
     }
 
     // The capsule eases from one size to the next on the in curve, its

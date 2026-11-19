@@ -1,43 +1,71 @@
 #!/usr/bin/env bash
-# Renders the app icon from its master, packaging/icon/sirius-icon.svg, and
-# the README's from packaging/icon/sirius-readme-icon.svg: the same star on a
-# transparent background, without the app icon's tile, plus a darker-blue
-# variant (sirius-readme-icon-light.svg) for GitHub's light theme.
+# Renders every icon from the silver star's masters in packaging/icon/:
+#   silver-star-app-icon.png   the app icon's tile, corners transparent
+#   silver-star.png            the star alone on transparent, for dark backgrounds
+#   silver-star-inverted.png   the same star dark, for light backgrounds
 #   scripts/make-icon.sh
 # writes
 #   packaging/AppIcon.icns              every standard iconset size, via iconutil
-#   packaging/icon/sirius-icon-1024.png the master at 1024 px
+#   packaging/icon/sirius-icon-1024.png the app icon at 1024 px
+#   packaging/images/sirius-star.png    the star in the app (Settings, and as a template in the pill)
 #   docs/assets/icon.png                the README header icon, 256 px (dark theme)
 #   docs/assets/icon-light.png          the same for the light theme
+#   landing/assets/favicon-dark.png     64 px, and favicon-light.png
+#   landing/assets/apple-touch-icon.png 180 px, the app icon
 #
-# Each size is rendered from the vector, not downscaled from 1024, so the
-# star's edges stay crisp at 16 and 32 px. The renderer is resvg through a
-# pinned npm package, so it needs node and npx on PATH.
+# The app icon's tile fills its master edge to edge, so it is set at 824 px in
+# a 1024 px canvas, the margin macOS icons keep. The star images are cut to a
+# square around the star first. Only macOS's own tools are used (sips, swift,
+# iconutil). The menu-bar star (packaging/images/menubar-star*.png) is made
+# separately, from the raster star at 19 pt.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SVG=packaging/icon/sirius-icon.svg
-RESVG=(npx --yes @resvg/resvg-js-cli@2.6.2-beta.1)
-
-README_SVG=packaging/icon/sirius-readme-icon.svg
-README_LIGHT_SVG=packaging/icon/sirius-readme-icon-light.svg
-
-render() {   # render <px> <out.png> [svg]
-    "${RESVG[@]}" --fit-width "$1" "${3:-$SVG}" "$2" >/dev/null
-}
+APP=packaging/icon/silver-star-app-icon.png
+STAR=packaging/icon/silver-star.png
+INVERTED=packaging/icon/silver-star-inverted.png
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+
+# pad <in> <out> <tile px> <canvas px>: the image centered on a transparent canvas.
+cat > "$work/pad.swift" <<'EOF'
+import AppKit
+let a = CommandLine.arguments
+let tile = CGFloat(Double(a[3])!), side = Int(a[4])!
+let image = NSImage(contentsOfFile: a[1])!
+let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
+                           samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                           bytesPerRow: 0, bitsPerPixel: 0)!
+NSGraphicsContext.saveGraphicsState()
+NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+NSGraphicsContext.current?.imageInterpolation = .high
+let inset = (CGFloat(side) - tile) / 2
+image.draw(in: NSRect(x: inset, y: inset, width: tile, height: tile))
+NSGraphicsContext.restoreGraphicsState()
+try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: a[2]))
+EOF
+pad() { swift "$work/pad.swift" "$@"; }
+
+# The app icon at 1024, then every iconset size from it.
+pad "$APP" packaging/icon/sirius-icon-1024.png 824 1024
 set=$work/AppIcon.iconset
 mkdir "$set"
 for pt in 16 32 128 256 512; do
-    render "$pt" "$set/icon_${pt}x${pt}.png"
-    render $((pt * 2)) "$set/icon_${pt}x${pt}@2x.png"
+    sips -z "$pt" "$pt" packaging/icon/sirius-icon-1024.png --out "$set/icon_${pt}x${pt}.png" >/dev/null
+    sips -z $((pt * 2)) $((pt * 2)) packaging/icon/sirius-icon-1024.png --out "$set/icon_${pt}x${pt}@2x.png" >/dev/null
 done
 iconutil -c icns -o packaging/AppIcon.icns "$set"
+sips -z 180 180 "$APP" --out landing/assets/apple-touch-icon.png >/dev/null
 
-render 1024 packaging/icon/sirius-icon-1024.png
+# The star, cut to a square around it (the masters are 1254 px with the star centered near 626, 622).
+sips -c 1060 1060 --cropOffset 92 96 "$STAR" --out "$work/star.png" >/dev/null
+sips -c 1060 1060 --cropOffset 92 96 "$INVERTED" --out "$work/inverted.png" >/dev/null
+sips -z 256 256 "$work/star.png" --out packaging/images/sirius-star.png >/dev/null
 mkdir -p docs/assets
-render 256 docs/assets/icon.png "$README_SVG"
-render 256 docs/assets/icon-light.png "$README_LIGHT_SVG"
-echo "wrote packaging/AppIcon.icns, packaging/icon/sirius-icon-1024.png, docs/assets/icon.png, docs/assets/icon-light.png"
+sips -z 256 256 "$work/star.png" --out docs/assets/icon.png >/dev/null
+sips -z 256 256 "$work/inverted.png" --out docs/assets/icon-light.png >/dev/null
+sips -z 64 64 "$work/star.png" --out landing/assets/favicon-dark.png >/dev/null
+sips -z 64 64 "$work/inverted.png" --out landing/assets/favicon-light.png >/dev/null
+
+echo "wrote packaging/AppIcon.icns, packaging/icon/sirius-icon-1024.png, packaging/images/sirius-star.png, docs/assets/icon*.png, landing/assets/favicon-*.png, landing/assets/apple-touch-icon.png"

@@ -121,6 +121,6 @@ enum AgentMarks {
     }
 
     private static func sparkle(_ agent: String) -> NSImage? {
-        NSImage(systemSymbolName: "sparkle", accessibilityDescription: agent)
+        SiriusMark.template(agent)
     }
 }

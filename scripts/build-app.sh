@@ -92,7 +92,7 @@ ditto packaging/images "$APP/Contents/Resources/images"
 # Each harness's default mark, <harness>.svg, copied into an agent's
 # registry folder as icon.svg when onboarding registers it.
 ditto packaging/marks "$APP/Contents/Resources/marks"
-# The app icon, rendered from packaging/icon/sirius-icon.svg by scripts/make-icon.sh.
+# The app icon, rendered from packaging/icon/silver-star-app-icon.png by scripts/make-icon.sh.
 cp packaging/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$APP/Contents/Info.plist"

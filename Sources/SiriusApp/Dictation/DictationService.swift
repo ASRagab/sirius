@@ -68,7 +68,7 @@ final class DictationService {
     private let agents: DictationAgents
     private let composer: ComposerController
     // The Sirius mark as the pill opens (the Debug preview's).
-    private let pill = DictationPill(mark: NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Sirius"))
+    private let pill = DictationPill(mark: SiriusMark.template())
     // The pill or the composer's waves, whichever this hold drives.
     private lazy var surface = DictationSurface(pill: pill, waves: composer.dictationWaves)
     private let log = DictationLog()

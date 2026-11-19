@@ -8,7 +8,7 @@ import AppKit
 @MainActor
 enum DictationPillDemo {
     // TODO(copy): the Sirius mark. The status item's sparkle for now.
-    static let pill = DictationPill(mark: NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Sirius"))
+    static let pill = DictationPill(mark: SiriusMark.template())
     private static var timer: Timer?
 
     static func dictation() {

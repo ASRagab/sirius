@@ -24,7 +24,7 @@ enum DictationSnapshots {
         let directory = URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         SpatialMotion.timeScale = 10
-        let pill = DictationPill(mark: NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Sirius"))
+        let pill = DictationPill(mark: SiriusMark.template())
         pill.parksOffscreen = true
 
         func run(_ seconds: TimeInterval, levels: Bool = false) {
