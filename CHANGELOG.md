@@ -2,6 +2,14 @@
 
 What changed in each version of Sirius. Before 1.0, a version that removes something or changes what an agent relies on bumps the minor number; everything else is a patch. Only the newest version is offered as a download and an update.
 
+## 0.4.5 · 2026.11.18
+
+* **Trusted folders.** An agent's page in Settings shows the folders its harness already trusts, as chips. Click one to work there, or + to choose another. The Codex app's per-chat folders are left out.
+* **Models for every agent.** Cursor and Antigravity list their models by name too, each with its maker's logo, and the agents list shows each agent's model by name.
+* **Makers' colors.** Agents show their makers' marks and colors everywhere, with Google's Gemini sparkle for Antigravity.
+* **Settings.** Always on the dark sky. An agent's page scrolls when it is long, and long folder names are cut short. Agents are plain rows.
+* **Menu.** "Check for updates…" in sentence case, and a space before the manual's arrow.
+
 ## 0.4.4 · 2026.11.18
 
 * **Apps can say their context is sensitive.** An app that marks what it shares as sensitive gets the same warning as Mail and Chrome (Ambient Context Protocol 0.2.4). Chrome's provider now marks itself.
