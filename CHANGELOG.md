@@ -2,6 +2,11 @@
 
 What changed in each version of Sirius. Before 1.0, a version that removes something or changes what an agent relies on bumps the minor number; everything else is a patch. Only the newest version is offered as a download and an update.
 
+## 0.4.6 · 2026.11.19
+
+* **A new mark.** Sirius's star is now the silver star: in the app icon, the menu bar, the dictation pill, Settings and toasts.
+* **Fixed.** The star in the dictation pill is no longer drawn wider than it is tall.
+
 ## 0.4.5 · 2026.11.18
 
 * **Trusted folders.** An agent's page in Settings shows the folders its harness already trusts, as chips. Click one to work there, or + to choose another. The Codex app's per-chat folders are left out.
