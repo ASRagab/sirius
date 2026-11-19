@@ -32,7 +32,7 @@ uniform float uWordA;
 uniform vec4 uMet;        // meteor: start xy, angle, length
 uniform vec3 uMetT;       // meteor progress 0..1, brightness, seconds since it burnt out
 uniform vec3 uMetC;       // meteor trail tint, picked per meteor
-uniform sampler2D uSky, uStars, uScorp, uShore, uWord, uFlare, uFlareHalo, uTStar;
+uniform sampler2D uSky, uStars, uScorp, uShore, uWord, uFlare, uFlareHalo, uTStar, uTLogo;
 uniform vec4 uFlareHaloP, uTStarP;  // radial profiles: centre xy, radius step, entries
 uniform float uFlareImg;            // review: 1 draws the old spikes image instead of the computed spikes
 uniform vec4 uScorpBox, uWordBox, uFlareBox, uOriBox;
@@ -163,28 +163,13 @@ vec3 flare(vec2 wp) {
   return (flareSpikes(wp - uFlareHaloP.xy) * tint * 1.1 + halo * mix(vec3(1.0), tint * 1.08, 0.35)) * bright;
 }
 
-// The title star above SIRIUS: the mock's measured profile drawn TSTAR_SCALE times larger, its glow turned to
-// the Sirius steel blue (181, 209, 255) while the core stays near-white, a soft blue halo, and a small flare in
-// the style of Sirius's: six spikes on an upright axis, under half as long, two thirds as bright and thinner, steady,
-// so it never competes with Sirius itself.
-const float TSTAR_SCALE = 1.8;
-const float TSTAR_AXIS = 90.0;   // upright, 33 degrees off Sirius's 57 so the two flares never read as copies
-const vec3 STEEL = vec3(181.0, 209.0, 255.0) / 255.0;
-const float TSPIKE_LEN[6] = float[6](13.0, 6.0, 4.5, 12.0, 7.5, 4.0);
-const float TSPIKE_PEAK[6] = float[6](0.4, 0.2, 0.14, 0.36, 0.22, 0.12);
+// The title star above SIRIUS: the Sirius logo, the silver star (assets/logo-star.png, cut from the master in
+// packaging/icon/silver-star.png), TLOGO world px square and centred where the mock's star was (uTStarP.xy). Its
+// glow is in the image; it is added as light, at a slow shimmer (pointLights).
+const float TLOGO = 64.0;
 vec3 titleStar(vec2 wp) {
-  vec2 d = wp - uTStarP.xy;
-  if (dot(d, d) > 60.0 * 60.0) return vec3(0);
-  float l = radial(uTStar, vec4(uTStarP.xy, uTStarP.z * TSTAR_SCALE, uTStarP.w), wp).g;
-  vec3 c = l * mix(STEEL, vec3(0.95, 0.97, 1.0), smoothstep(0.9, 1.0, l));
-  float r2 = dot(d, d);
-  c += STEEL * STEEL * (0.11 * exp(-r2 / 50.0) + 0.035 * exp(-r2 / 400.0));
-  vec3 sp = vec3(0);
-  for (int i = 0; i < 6; i++) {
-    float ang = radians(TSTAR_AXIS + 60.0 * float(i));
-    sp += TSPIKE_PEAK[i] * spike(d, vec2(cos(ang), sin(ang)), TSPIKE_LEN[i], 0.32);
-  }
-  return c + sp * mix(STEEL, vec3(1.0), 0.4);
+  vec4 s = boxTex(uTLogo, vec4(uTStarP.xy - 0.5 * TLOGO, TLOGO, TLOGO), wp);
+  return s.rgb * s.a * 1.15;
 }
 
 // Point lights only: stars, Scorpius, the meteor and the pinned flare. Cheap enough to sample many times.
@@ -349,8 +334,10 @@ await Promise.all([
   profile(6, meta.flareHalo, "uFlareHaloP"),
   profile(7, meta.titlestar, "uTStarP"),
   texture(8, "assets/const-ori.png"),
+  texture(12, "assets/logo-star.png"),
 ]);
 ["uSky", "uStars", "uScorp", "uShore", "uWord", "uFlare", "uFlareHalo", "uTStar", "uOri"].forEach((n, i) => gl.uniform1i(U[n], i));
+gl.uniform1i(U.uTLogo, 12);   // 9 to 11 are the sky base and haze, below
 gl.uniform4f(U.uScorpBox, ...meta.scorpius);
 gl.uniform4f(U.uFlareBox, ...meta.flare);
 gl.uniform1f(U.uFlareImg, new URLSearchParams(location.search).get("flare") === "img" ? 1 : 0);

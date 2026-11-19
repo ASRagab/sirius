@@ -13,6 +13,7 @@
 #   docs/assets/icon-light.png          the same for the light theme
 #   landing/assets/favicon-dark.png     64 px, and favicon-light.png
 #   landing/assets/apple-touch-icon.png 180 px, the app icon
+#   landing/assets/logo-star.png        the title star above SIRIUS, 256 px
 #
 # The app icon's tile fills its master edge to edge, so it is set at 824 px in
 # a 1024 px canvas, the margin macOS icons keep. The star images are cut to a
@@ -82,6 +83,7 @@ mkdir -p docs/assets
 sips -z 256 256 "$work/star.png" --out docs/assets/icon.png >/dev/null
 sips -z 256 256 "$work/inverted.png" --out docs/assets/icon-light.png >/dev/null
 sips -z 64 64 "$work/star.png" --out landing/assets/favicon-dark.png >/dev/null
+cp packaging/images/sirius-star.png landing/assets/logo-star.png   # the title star above SIRIUS
 sips -z 64 64 "$work/inverted.png" --out landing/assets/favicon-light.png >/dev/null
 
 echo "wrote packaging/AppIcon.icns, packaging/icon/sirius-icon-1024.png, packaging/images/sirius-star.png, docs/assets/icon*.png, landing/assets/favicon-*.png, landing/assets/apple-touch-icon.png"
