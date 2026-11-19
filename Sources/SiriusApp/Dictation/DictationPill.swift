@@ -1057,7 +1057,7 @@ private struct LaunchSparkle: View {
     }
     // The raster star's arms taper to nothing, so it is drawn larger than the
     // symbol was, overflowing the 20 pt content into the capsule's padding.
-    static let starScale: CGFloat = 2
+    static let starScale: CGFloat = 1.65
 
     var body: some View {
         let r = CGFloat(reveal)
