@@ -7,7 +7,8 @@
 # writes
 #   packaging/AppIcon.icns              every standard iconset size, via iconutil
 #   packaging/icon/sirius-icon-1024.png the app icon at 1024 px
-#   packaging/images/sirius-star.png    the star in the app (Settings, and as a template in the pill)
+#   packaging/images/sirius-star.png    the star in the app (Settings)
+#   packaging/images/sirius-star-mark.png  the same, bolder, tinted at small sizes (the pill, toasts)
 #   docs/assets/icon.png                the README header icon, 256 px (dark theme)
 #   docs/assets/icon-light.png          the same for the light theme
 #   landing/assets/favicon-dark.png     64 px, and favicon-light.png
@@ -62,6 +63,21 @@ sips -z 180 180 "$APP" --out landing/assets/apple-touch-icon.png >/dev/null
 sips -c 1060 1060 --cropOffset 92 96 "$STAR" --out "$work/star.png" >/dev/null
 sips -c 1060 1060 --cropOffset 92 96 "$INVERTED" --out "$work/inverted.png" >/dev/null
 sips -z 256 256 "$work/star.png" --out packaging/images/sirius-star.png >/dev/null
+# The same star, white, with its alpha raised 2.2 times, for tinting at small sizes (the pill, toasts).
+cat > "$work/alpha.swift" <<'SWIFT'
+import AppKit
+let a = CommandLine.arguments, gain = CGFloat(Double(a[3])!)
+let src = NSBitmapImageRep(data: try! Data(contentsOf: URL(fileURLWithPath: a[1])))!
+let out = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: src.pixelsWide, pixelsHigh: src.pixelsHigh,
+                           bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                           colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+for y in 0..<src.pixelsHigh { for x in 0..<src.pixelsWide {
+    let alpha = min(1, (src.colorAt(x: x, y: y)?.alphaComponent ?? 0) * gain)
+    out.setColor(NSColor(deviceRed: 1, green: 1, blue: 1, alpha: alpha), atX: x, y: y)
+} }
+try! out.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: a[2]))
+SWIFT
+swift "$work/alpha.swift" packaging/images/sirius-star.png packaging/images/sirius-star-mark.png 2.2
 mkdir -p docs/assets
 sips -z 256 256 "$work/star.png" --out docs/assets/icon.png >/dev/null
 sips -z 256 256 "$work/inverted.png" --out docs/assets/icon-light.png >/dev/null

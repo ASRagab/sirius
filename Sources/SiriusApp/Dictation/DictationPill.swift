@@ -830,6 +830,8 @@ struct PillView: View {
             // crosses one to the other by opacity alone.
             ZStack {
                 MarkView(image: model.mark)
+                    .frame(width: Self.contentHeight * SiriusMark.pillScale,
+                           height: Self.contentHeight * SiriusMark.pillScale)
                     .frame(width: Self.contentHeight, height: Self.contentHeight)
                     .opacity(model.opensOnLogo ? 0 : 1)
                 MarkView(image: model.openLogo)
@@ -1046,16 +1048,16 @@ private struct LaunchSparkle: View {
     // The silver star as a template, tinted like the symbol it replaced; the
     // symbol where the bundle has no star.
     @ViewBuilder private var star: some View {
-        if let image = SiriusMark.silver {
+        if let image = SiriusMark.mark ?? SiriusMark.silver {
             Image(nsImage: image).renderingMode(.template).resizable().aspectRatio(contentMode: .fit)
                 .frame(width: Self.size * Self.starScale, height: Self.size * Self.starScale)
         } else {
             Image(systemName: "sparkle").font(.system(size: Self.size, weight: .medium))
         }
     }
-    // The raster star's arms taper to nothing, so it is drawn a little larger
-    // than the symbol to read at the same size.
-    static let starScale: CGFloat = 1.35
+    // The raster star's arms taper to nothing, so it is drawn larger than the
+    // symbol was, overflowing the 20 pt content into the capsule's padding.
+    static let starScale: CGFloat = 2
 
     var body: some View {
         let r = CGFloat(reveal)
