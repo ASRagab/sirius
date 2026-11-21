@@ -484,7 +484,7 @@ if (hazeOn) {
 gl.uniform1i(U.uSkyBase, 9); gl.uniform1i(U.uSkyHaze, 11); gl.uniform1i(U.uHazeN, 10);
 gl.uniform1f(U.uHaze, hazeOn ? 1 : 0);
 
-// Layout: cover the viewport with the 1512x982 frame; the camera starts at the sky top and ends over the water.
+// Layout: cover the viewport with the 1512x982 frame, the camera over the water (?pan=0..1 can still pin it higher).
 let L = {};
 const phoneUI = matchMedia("(pointer: coarse), (max-width: 640px)");   // as in style.css and index.html
 const PHONE_LOWER = 0.035;
@@ -531,10 +531,10 @@ function layout() {
 addEventListener("resize", layout);
 layout();
 
-// The intro: fade up on the sky top, hold, pan down to the water, then the title focuses in.
-const FADE = 1.6, HOLD = 1.2, PAN = 4.3, TITLE = 2.2;
+// The intro: the scene fades up already over the water, and the title focuses in a beat later. No pan.
+const FADE = 1.0, TITLE_AT = 0.4, TITLE = 2.2;
 const ease = (x) => x * x * (3 - 2 * x);
-// CSS-style cubic-bezier: a smootherstep-like start, then a long, gentle deceleration so the camera creeps in.
+// CSS-style cubic-bezier, so the shader can follow a CSS transition's curve.
 const bezier = (x1, y1, x2, y2) => (x) => {
   if (x <= 0 || x >= 1) return x <= 0 ? 0 : 1;   // exact ends: the bisection only gets close, and the settle check needs 1
   const f = (t, a, b) => 3 * a * t * (1 - t) ** 2 + 3 * b * t * t * (1 - t) + t ** 3;
@@ -542,14 +542,13 @@ const bezier = (x1, y1, x2, y2) => (x) => {
   for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; f(m, x1, x2) < x ? (lo = m) : (hi = m); }
   return f((lo + hi) / 2, y1, y2);
 };
-const panEase = bezier(0.45, 0, 0.15, 1);
 // The wordmark's own entrance (style.css: opacity and blur over 2.2 s on cubic-bezier(.2,.6,.2,1)), which the
 // title star grows in with.
 const wordCurve = bezier(0.2, 0.6, 0.2, 1);
 const WORD_IN = 2.2;
 const q = new URLSearchParams(location.search);   // review: ?pan=0..1 pins the camera, ?meteor freezes one (=o an Orionid, =r a random one; &mc=0..4 its colour; &fly lets it fly)
 const pinned = q.has("pan") ? +q.get("pan") : null;
-const panAt = (e) => (pinned ?? (reduced ? 1 : panEase(Math.min(1, Math.max(0, (e - HOLD) / PAN)))));
+const panAt = () => pinned ?? 1;
 const camAt = (e) => L.startTop + (L.endTop - L.startTop) * panAt(e);
 
 let camTop = camAt(0);
@@ -606,11 +605,11 @@ function spawn(t) {
 }
 
 const born = performance.now() / 1000;
-let settled = null;   // time the camera came to rest
+let settled = null;   // time the title began its entrance
 function frame(now) {
   const t = now / 1000, e = t - born;
   camTop = camAt(e);
-  if (settled === null && panAt(e) >= 1) {
+  if (settled === null && panAt(e) >= 1 && (reduced || e >= TITLE_AT)) {
     settled = t;
     document.body.classList.add("settled");
     nextMet = q.has("meteor") ? t : t + TITLE + 2.5;

@@ -2,7 +2,7 @@
 
 The new-moon mock (Figma "Sirius · Night sky", frame 38:8) made live. The sky is one WebGL shader. The title, Download and GitHub link are HTML on top.
 
-Run it with `python3 .src/serve.py` in this folder (a static server with caching off, so a plain reload picks up changes), then open http://127.0.0.1:8731. The page does not scroll. It plays one intro: fade up on the sky top (1.6 s), hold (1.2 s), pan down to the water (4.3 s, easing in and settling slowly), then SIRIUS blurs into focus (2.2 s) with its reflection fading in, and Download and GitHub follow a beat later. Timings are the constants at the top of the intro block in `sky.js`. `?pan=0..1` pins the camera, `?haze=0` shows the old smooth haze, and `?meteor` freezes a meteor mid-flight (`=o` an Orionid, `=r` a random one, `&mc=0..4` its colour, `&fly` lets it fly); all are for review.
+Run it with `python3 .src/serve.py` in this folder (a static server with caching off, so a plain reload picks up changes), then open http://127.0.0.1:8731. The page does not scroll. It plays one short intro with no pan: the scene fades up already over the water (1 s), SIRIUS starts to blur into focus 0.4 s in (2.2 s) with its reflection fading in, and Download and GitHub follow a beat later. Timings are the constants at the top of the intro block in `sky.js`. `?pan=0..1` pins the camera, `?haze=0` shows the old smooth haze, and `?meteor` freezes a meteor mid-flight (`=o` an Orionid, `=r` a random one, `&mc=0..4` its colour, `&fly` lets it fly); all are for review.
 
 ## Hosting
 
