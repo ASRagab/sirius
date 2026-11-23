@@ -24,6 +24,9 @@ struct ACPProfile: Sendable {
     // Extra keys sent under initialize's clientCapabilities._meta (ACP's
     // extension point for server-specific capabilities).
     var clientCapabilitiesMeta: [String: JSONValue] = [:]
+    // Run before each start, with the adapter's environment: readies what
+    // the server needs on disk and returns more environment for it.
+    var prepare: @Sendable (AgentRegistration, [String: String]) throws -> [String: String] = { _, _ in [:] }
     // The harness's own requests (not ACP's), or nil for one it has none for.
     var answer: @Sendable (_ method: String, _ params: JSONValue) -> JSONRPCStdio.Reply? = { _, _ in nil }
 
@@ -61,7 +64,9 @@ extension ACPProfile {
     //
     // The model is set through the session's "model" config option, never
     // --model: that flag works before `acp`, but it also rewrites the user's
-    // own default model in ~/.cursor/cli-config.json. Advertising
+    // own default model in ~/.cursor/cli-config.json. Setting the config
+    // option rewrites it too (checked 2026.11.23), so the server runs on
+    // the agent's own config directory: see CursorConfig. Advertising
     // clientCapabilities._meta.parameterizedModelPicker asks `agent acp` for
     // the parameterized catalog (bare model ids plus separate thought_level
     // and model_config options, matching the interactive CLI) rather than
@@ -78,6 +83,10 @@ extension ACPProfile {
         authMethod: "cursor_login",
         arguments: { _ in ["--trust", "--approve-mcps", "acp"] },
         clientCapabilitiesMeta: ["parameterizedModelPicker": .bool(true)],
+        prepare: { registration, environment in
+            try CursorConfig.isolate(user: CursorConfig.userDirectory(environment: environment),
+                                     own: CursorConfig.agentDirectory(agent: registration.agent))
+        },
         answer: cursorAnswer)
 
     // Cursor's blocking requests (docs: "Your client must reply"), each
